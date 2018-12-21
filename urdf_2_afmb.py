@@ -114,17 +114,23 @@ class CreateAFYAML:
 
     def __init__(self, ignore_inertial_offset=True, ignore_inertias=True):
         self._afmb_yaml = None
-        self.bodiesNameList = []
-        self.jointNamesList = []
-        self.bodiesMap = {}
+        self._body_names_list = []
+        self._joint_names_list = []
+        self._bodies_map = {}
         self.mesh_resource_path = ''
         self.col_mesh_resource_path = ''
         self._ros_packages = {}
         self._ignore_inertial_offsets = ignore_inertial_offset
         self._ignore_inertias = ignore_inertias
         self._save_as = ''
-        self.bodyPrefix = 'BODY '
-        self.jointPrefix = 'JOINT '
+        self.body_name_prefix = 'BODY '
+        self.joint_name_prefix = 'JOINT '
+
+    def get_body_prefixed_name(self, urdf_body_str):
+        return self.body_name_prefix + urdf_body_str
+
+    def get_joint_prefixed_name(self, urdf_joint_str):
+        return self.joint_name_prefix + urdf_joint_str
 
     def get_path_from_user_input(self, filepath):
         if sys.version_info[0] < 3:
@@ -195,8 +201,11 @@ class CreateAFYAML:
         body = BodyTemplate()
         body_data = body.afmb_data
         body_data['name'] = urdf_link.attrib['name']
+
         if urdf_link.attrib['name'] == 'world':
             return
+        body_yaml_name = self.get_body_prefixed_name(urdf_link.attrib['name'])
+
         visual_urdf = urdf_link.find('visual')
         collision_urdf = urdf_link.find('collision')
         inertial_urdf = urdf_link.find('inertial')
@@ -261,24 +270,28 @@ class CreateAFYAML:
 
             body_data['mass'] = 0.0
 
-        afmb_yaml[self.bodyPrefix + urdf_link.attrib['name']] = body_data
-        self.bodiesMap[urdf_link.attrib['name']] = body
+        self._bodies_map[urdf_link.attrib['name']] = body
+
+        afmb_yaml[body_yaml_name] = body_data
+        self._body_names_list.append(body_yaml_name)
         # print(body_data)
 
     def load_joint_data(self, afmb_yaml, urdf_joint):
         if urdf_joint.attrib['type'] == 'fixed':
             if urdf_joint.find('parent').attrib['link'] == 'world':
-                afmb_yaml[self.bodyPrefix + urdf_joint.find('child').attrib['link']]['mass'] = 0.0
+                afmb_yaml[self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])]['mass'] = 0.0
                 print('Setting Mass of ', urdf_joint.find('child').attrib['link'], ' to 0.0')
+
+        joint_yaml_name = self.get_joint_prefixed_name(urdf_joint.attrib['name'])
 
         if urdf_joint.attrib['type'] == 'revolute':
             joint = JointTemplate()
             joint_data = joint.afmb_data
-            parent_body = self.bodiesMap[urdf_joint.find('parent').attrib['link']]
-            child_body = self.bodiesMap[urdf_joint.find('child').attrib['link']]
+            parent_body = self._bodies_map[urdf_joint.find('parent').attrib['link']]
+            child_body = self._bodies_map[urdf_joint.find('child').attrib['link']]
             joint_data['name'] = urdf_joint.attrib['name']
-            joint_data['parent'] = self.bodyPrefix + urdf_joint.find('parent').attrib['link']
-            joint_data['child'] = self.bodyPrefix + urdf_joint.find('child').attrib['link']
+            joint_data['parent'] = self.get_body_prefixed_name(urdf_joint.find('parent').attrib['link'])
+            joint_data['child'] = self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])
             joint.origin = to_kdl_frame(urdf_joint.find('origin'))
             joint.axis = to_kdl_vec(urdf_joint.find('axis'))
 
@@ -321,7 +334,9 @@ class CreateAFYAML:
             joint_limit_data = joint_data["joint limits"]
             joint_limit_data['low'] = round(float(urdf_joint.find('limit').attrib['lower']), 3)
             joint_limit_data['high'] = round(float(urdf_joint.find('limit').attrib['upper']), 3)
-            afmb_yaml[self.jointPrefix + urdf_joint.attrib['name']] = joint_data
+
+            afmb_yaml[joint_yaml_name] = joint_data
+            self._joint_names_list.append(joint_yaml_name)
             # print(jointData)
 
     def compute_parent_pivot_and_axis(self, parent_body, joint):
@@ -355,26 +370,24 @@ class CreateAFYAML:
         urdf_links = urdf_robot.findall('link')
         urdf_joints = urdf_robot.findall('joint')
 
-        for urdf_link in urdf_links:
-            if urdf_link.attrib['name'] != 'world':
-                self.bodiesNameList.append(self.bodyPrefix + urdf_link.attrib['name'])
-
-        for urdf_joint in urdf_joints:
-            if urdf_joint.attrib['name'] != 'fixed':
-                self.jointNamesList.append(self.jointPrefix + urdf_joint.attrib['name'])
-
         self._afmb_yaml = OrderedDict()
 
-        self._afmb_yaml['bodies'] = self.bodiesNameList
-        self._afmb_yaml['joints'] = self.jointNamesList
+        # For inorder processing, set the bodies and joints tag at the top of the map
+        self._afmb_yaml['bodies'] = []
+        self._afmb_yaml['joints'] = []
 
         self._afmb_yaml['high resolution path'] = ""
         self._afmb_yaml['low resolution path'] = ""
+
         for urdf_link in urdf_links:
             self.load_body_data(self._afmb_yaml, urdf_link)
 
         for urdf_joint in urdf_joints:
             self.load_joint_data(self._afmb_yaml, urdf_joint)
+
+        # Now populate the bodies and joints tag
+        self._afmb_yaml['bodies'] = self._body_names_list
+        self._afmb_yaml['joints'] = self._joint_names_list
 
         print('SUCCESSFULLY GENERATED')
 
