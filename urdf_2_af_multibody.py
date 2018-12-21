@@ -113,6 +113,7 @@ class JointTemplate:
 class CreateAFYAML:
 
     def __init__(self, ignore_inertial_offset=True, ignore_inertias=True):
+        self._afmb_yaml = None
         self.bodiesNameList = []
         self.jointNamesList = []
         self.bodiesMap = {}
@@ -350,7 +351,7 @@ class CreateAFYAML:
         child_axis = inv_child_temp_frame.M * joint.axis
         return child_pivot, child_axis
 
-    def save_afmb_yaml(self, urdf_robot):
+    def generate_afmb_yaml(self, urdf_robot):
         urdf_links = urdf_robot.findall('link')
         urdf_joints = urdf_robot.findall('joint')
 
@@ -362,41 +363,69 @@ class CreateAFYAML:
             if urdf_joint.attrib['name'] != 'fixed':
                 self.jointNamesList.append(self.jointPrefix + urdf_joint.attrib['name'])
 
-        #self._save_as = '/home/adnan/chai3d/modules/BULLET/bin/resources/config/puzzles/urdf-mtm.yaml'
-        self._save_as = '/home/adnan/chai3d/modules/BULLET/bin/resources/config/puzzles/urdf-kuka.yaml'
+        self._afmb_yaml = OrderedDict()
+
+        self._afmb_yaml['bodies'] = self.bodiesNameList
+        self._afmb_yaml['joints'] = self.jointNamesList
+
+        self._afmb_yaml['high resolution path'] = ""
+        self._afmb_yaml['low resolution path'] = ""
+        for urdf_link in urdf_links:
+            self.load_body_data(self._afmb_yaml, urdf_link)
+
+        for urdf_joint in urdf_joints:
+            self.load_joint_data(self._afmb_yaml, urdf_joint)
+
+        print('SUCCESSFULLY GENERATED')
+
+    def save_afmb_yaml(self, output_file):
+        self._save_as = output_file
         file_name = os.path.basename(self._save_as)
         save_path = os.path.dirname(self._save_as)
         if not file_name:
             file_name = 'default.yaml'
         output_file_name = os.path.join(save_path, file_name)
         output_file = open(output_file_name, 'w')
-        print('Output filename is: ', output_file_name)
-        afmb_yaml = OrderedDict()
+        yaml.dump(self._afmb_yaml, output_file)
+        print('Saved to: \"%s\"', output_file_name)
 
-        afmb_yaml['bodies'] = self.bodiesNameList
-        afmb_yaml['joints'] = self.jointNamesList
-
-        afmb_yaml['high resolution path'] = ""
-        afmb_yaml['low resolution path'] = ""
-        for urdf_link in urdf_links:
-            self.load_body_data(afmb_yaml, urdf_link)
-
-        for urdf_joint in urdf_joints:
-            self.load_joint_data(afmb_yaml, urdf_joint)
-
-        # print(afYAML)
-        yaml.dump(afmb_yaml, output_file)
+    def print_afmb_yaml(self):
+        print (self._afmb_yaml)
 
 
 def main():
     global urdf_filepath
     setup_yaml()
-    #urdf_filepath = '/home/adnan/dvrk_ws/src/dvrk-ros/dvrk_model/model/mtm.urdf'
-    urdf_filepath = '/home/adnan/bullet3/data/kuka_lwr/kuka.urdf'
+    if len(sys.argv) > 1:
+        urdf_filepath = sys.argv[1]
+        if os.path.exists(urdf_filepath):
+            print("Specified File: \"%s\"", urdf_filepath)
+        else:
+            print("Filepath: \"%s\" does not exist on this machine, exiting", urdf_filepath)
+            exit()
+    else:
+        print("No URDF File Specified")
+        exit()
     root = ET.parse(urdf_filepath)
     robot = root.getroot()
     af_multi_body_config = CreateAFYAML(ignore_inertial_offset=True)
-    af_multi_body_config.save_afmb_yaml(robot)
+    af_multi_body_config.generate_afmb_yaml(robot)
+
+    # If two arguments already specified, save to the second argument
+    if len(sys.argv) > 2:
+        save_to = sys.argv[2]
+        af_multi_body_config.save_afmb_yaml(save_to)
+    else:
+        # Give one more chance to save to a file or give option to print to console
+        if sys.version_info[0] < 3:
+            save_to = raw_input("Specify filepath to save AFMB or enter \'x\' to print to console: ")
+        else:
+            save_to = input("Specify filepath to save AFMB or enter \'x\' to print to console: ")
+
+        if save_to == 'x':
+            af_multi_body_config.print_afmb_yaml()
+        else:
+            af_multi_body_config.save_afmb_yaml(save_to)
 
 
 if __name__ == "__main__":
