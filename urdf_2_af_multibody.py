@@ -80,14 +80,14 @@ def assign_xyz(yaml_vec, vec):
 # Body Template for the some commonly used of afBody's data
 class BodyTemplate:
     def __init__(self):
-        self.data = {'name': "",
-                     'mesh': "",
-                     'mass': 0.0,
-                     'scale': 1.0,
-                     'location': {
-                        'position': {'x': 0, 'y': 0, 'z': 0},
-                        'orientation': {'r': 0, 'p': 0, 'y': 0}},
-                     'color': 'random'}
+        self.afmb_data = {'name': "",
+                          'mesh': "",
+                          'mass': 0.0,
+                          'scale': 1.0,
+                          'location': {
+                             'position': {'x': 0, 'y': 0, 'z': 0},
+                             'orientation': {'r': 0, 'p': 0, 'y': 0}},
+                          'color': 'random'}
         self.inertial_offset = Frame()
         self.visual_offset = Frame()
         self.collision_offset = Frame()
@@ -96,16 +96,16 @@ class BodyTemplate:
 # Joint Template for the some commonly used of afJoint's data
 class JointTemplate:
     def __init__(self):
-        self.data = {'name': '',
-                     'parent': '',
-                     'child': '',
-                     'parent axis': {'x': 0, 'y': 0.0, 'z': 1.0},
-                     'parent pivot': {'x': 0, 'y': 0.0, 'z': 0},
-                     'child axis': {'x': 0, 'y': 0.0, 'z': 1.0},
-                     'child pivot': {'x': 0, 'y': 0.0, 'z': 0},
-                     'joint limits': {'low': -1.2, 'high': 1.2},
-                     'enable motor': 0,
-                     'max motor impulse': 0}
+        self.afmb_data = {'name': '',
+                          'parent': '',
+                          'child': '',
+                          'parent axis': {'x': 0, 'y': 0.0, 'z': 1.0},
+                          'parent pivot': {'x': 0, 'y': 0.0, 'z': 0},
+                          'child axis': {'x': 0, 'y': 0.0, 'z': 1.0},
+                          'child pivot': {'x': 0, 'y': 0.0, 'z': 0},
+                          'joint limits': {'low': -1.2, 'high': 1.2},
+                          'enable motor': 0,
+                          'max motor impulse': 0}
         self.origin = Vector()
         self.axis = Vector(0.0, 0.0, 1.0)
 
@@ -192,7 +192,7 @@ class CreateAFYAML:
 
     def load_body_data(self, afmb_yaml, urdf_link):
         body = BodyTemplate()
-        body_data = body.data
+        body_data = body.afmb_data
         body_data['name'] = urdf_link.attrib['name']
         if urdf_link.attrib['name'] == 'world':
             return
@@ -272,7 +272,7 @@ class CreateAFYAML:
 
         if urdf_joint.attrib['type'] == 'revolute':
             joint = JointTemplate()
-            joint_data = joint.data
+            joint_data = joint.afmb_data
             parent_body = self.bodiesMap[urdf_joint.find('parent').attrib['link']]
             child_body = self.bodiesMap[urdf_joint.find('child').attrib['link']]
             joint_data['name'] = urdf_joint.attrib['name']
@@ -297,6 +297,23 @@ class CreateAFYAML:
             child_pivot_data = joint_data["child pivot"]
             child_axis_data = joint_data["child axis"]
 
+            # There is a bug in bullet discussed here:
+            # https: // github.com / bulletphysics / bullet3 / issues / 2031
+            # As a work around, we want to tweak the axis or body masses just a bit
+            # It's better to tweak masses than axes
+            if parent_body.afmb_data['mass'] > 0.0:
+                factA = 1.0 / parent_body.afmb_data['mass']
+                if child_body.afmb_data['mass'] > 0.0:
+                    factB = 1.0 / child_body.afmb_data['mass']
+                    weighted_axis = factA * parent_axis + factB * child_axis
+                    if weighted_axis.Norm() < 0.001:
+                        print("Weighted Axis for joint \"%s\" is zero, to avoid breaking Bullet, "
+                              "increasing the mass of parent body \"%s\" and decreasing the mass"
+                              " of child body \"%s\" by 1%%"
+                              % (joint.afmb_data['name'], parent_body.afmb_data['name'], child_body.afmb_data['name']))
+                        parent_body.afmb_data['mass'] = parent_body.afmb_data['mass'] * 1.01
+                        child_body.afmb_data['mass'] = child_body.afmb_data['mass'] * 0.99
+
             assign_xyz(child_pivot_data, child_pivot)
             assign_xyz(child_axis_data, child_axis)
 
@@ -308,9 +325,9 @@ class CreateAFYAML:
 
     def compute_parent_pivot_and_axis(self, parent_body, joint):
         if parent_body.visual_offset != parent_body.collision_offset:
-            print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % parent_body.data['name'])
-            print('Visual Mesh Name: %s' % parent_body.data['mesh'])
-            print('Collision Mesh Name: %s' % parent_body.data['collision mesh'])
+            print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % parent_body.afmb_data['name'])
+            print('Visual Mesh Name: %s' % parent_body.afmb_data['mesh'])
+            print('Collision Mesh Name: %s' % parent_body.afmb_data['collision mesh'])
             print('VISUAL FRAME: %s' % parent_body.visual_offset.p)
             print('COLLISION FRAME: %s' % parent_body.collision_offset.p)
         parent_temp_frame = parent_body.visual_offset.Inverse() * joint.origin
@@ -322,9 +339,9 @@ class CreateAFYAML:
     # for that while computing child axis
     def compute_child_pivot_and_axis(self, child_body, joint):
         if child_body.visual_offset != child_body.collision_offset:
-            print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % child_body.data['name'])
-            print('Visual Mesh Name: %s' % child_body.data['mesh'])
-            print('Collision Mesh Name: %s' % child_body.data['collision mesh'])
+            print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % child_body.afmb_data['name'])
+            print('Visual Mesh Name: %s' % child_body.afmb_data['mesh'])
+            print('Collision Mesh Name: %s' % child_body.afmb_data['collision mesh'])
             print('VISUAL FRAME: %s' % child_body.visual_offset.p)
             print('COLLISION FRAME: %s' % child_body.collision_offset.p)
         child_temp_frame = child_body.visual_offset
