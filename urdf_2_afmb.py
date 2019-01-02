@@ -8,7 +8,7 @@ import yaml
 from enum import Enum
 from pathlib import Path
 import xml.etree.ElementTree as ET
-from PyKDL import Frame, Vector, Rotation
+from PyKDL import Frame, Vector, Rotation, dot
 
 from collections import OrderedDict
 
@@ -77,6 +77,73 @@ def assign_xyz(yaml_vec, vec):
     yaml_vec['z'] = round(vec.z(), 3)
 
 
+def skew_mat(v):
+    return Rotation(0, -v[2], v[1],
+                    v[2], 0, -v[0],
+                    -v[1], v[0], 0)
+
+
+def compute_parent_pivot_and_axis(parent_body, joint):
+    if parent_body.visual_offset != parent_body.collision_offset:
+        print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % parent_body.afmb_data['name'])
+        print('Visual Mesh Name: %s' % parent_body.afmb_data['mesh'])
+        print('Collision Mesh Name: %s' % parent_body.afmb_data['collision mesh'])
+        print('VISUAL FRAME: %s' % parent_body.visual_offset.p)
+        print('COLLISION FRAME: %s' % parent_body.collision_offset.p)
+    parent_temp_frame = parent_body.visual_offset.Inverse() * joint.origin
+    parent_pivot = parent_temp_frame.p
+    parent_axis = parent_temp_frame.M * joint.axis
+    return parent_pivot, parent_axis
+
+
+# Since the URDF uses 4 frames for child links, 2 for our use, we have to account
+# for that while computing child axis
+def compute_child_pivot_and_axis(child_body, joint):
+    if child_body.visual_offset != child_body.collision_offset:
+        print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % child_body.afmb_data['name'])
+        print('Visual Mesh Name: %s' % child_body.afmb_data['mesh'])
+        print('Collision Mesh Name: %s' % child_body.afmb_data['collision mesh'])
+        print('VISUAL FRAME: %s' % child_body.visual_offset.p)
+        print('COLLISION FRAME: %s' % child_body.collision_offset.p)
+    child_temp_frame = child_body.visual_offset
+    inv_child_temp_frame = child_temp_frame.Inverse()
+    child_pivot = inv_child_temp_frame.p
+    child_axis = inv_child_temp_frame.M * joint.axis
+    return child_pivot, child_axis
+
+
+def add_mat(mat1, mat2):
+    out = Rotation()
+    for i in range(0, 3):
+        for j in range(0, 3):
+            out[i, j] = mat1[i, j] + mat2[i, j]
+    return out
+
+
+def scalar_mul(mat, s):
+    out = Rotation()
+    for i in range(0, 3):
+        for j in range(0, 3):
+            out[i, j] = mat[i, j] * s
+    return out
+
+
+# https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d/897677#897677
+def rot_matrix_from_vecs(v1, v2):
+    out = Rotation()
+    vcross = v1 * v2
+    vdot = dot(v1, v2)
+    if 1.0 - vdot < 0.01:
+        return out
+    elif 1.0 + vdot < 0.01:
+        print 'IMPLEMENT THIS'
+    else:
+        skew_v = skew_mat(vcross)
+        out = add_mat(add_mat(Rotation(), skew_v), scalar_mul(
+            skew_v * skew_v, (1 - vdot) / (vcross.Norm() ** 2)))
+    return out
+
+
 # Body Template for the some commonly used of afBody's data
 class BodyTemplate:
     def __init__(self):
@@ -105,7 +172,7 @@ class JointTemplate:
                           'child pivot': {'x': 0, 'y': 0.0, 'z': 0},
                           'joint limits': {'low': -1.2, 'high': 1.2},
                           'enable motor': 0,
-                          'max motor impulse': 0}
+                          'max motor impulse': 0.05}
         self.origin = Vector()
         self.axis = Vector(0.0, 0.0, 1.0)
 
@@ -209,40 +276,41 @@ class CreateAFYAML:
         visual_urdf = urdf_link.find('visual')
         collision_urdf = urdf_link.find('collision')
         inertial_urdf = urdf_link.find('inertial')
-        abs_mesh_path, filename = self.get_path_and_file_name(visual_urdf.find('geometry').find('mesh').attrib['filename'])
-        if collision_urdf is not None:
-            abs_col_mesh_path, col_filename = self.get_path_and_file_name(collision_urdf.find('geometry').find('mesh').attrib['filename'])
-        else:
-            abs_col_mesh_path = abs_mesh_path
-            col_filename = filename
+        if visual_urdf is not None:
+            abs_mesh_path, filename = self.get_path_and_file_name(visual_urdf.find('geometry').find('mesh').attrib['filename'])
+            if collision_urdf is not None:
+                abs_col_mesh_path, col_filename = self.get_path_and_file_name(collision_urdf.find('geometry').find('mesh').attrib['filename'])
+            else:
+                abs_col_mesh_path = abs_mesh_path
+                col_filename = filename
 
-        # Sanity check to include the high and low res paths for each body only if they are different
-        if not self.mesh_resource_path:
-            self.mesh_resource_path = abs_mesh_path
-            afmb_yaml['high resolution path'] = abs_mesh_path
+            # Sanity check to include the high and low res paths for each body only if they are different
+            if not self.mesh_resource_path:
+                self.mesh_resource_path = abs_mesh_path
+                afmb_yaml['high resolution path'] = abs_mesh_path
 
-        elif self.mesh_resource_path != abs_mesh_path:
-            body_data['high resolution path'] = abs_mesh_path
+            elif self.mesh_resource_path != abs_mesh_path:
+                body_data['high resolution path'] = abs_mesh_path
 
-        if not self.col_mesh_resource_path:
-            self.col_mesh_resource_path = abs_col_mesh_path
-            afmb_yaml['low resolution path'] = abs_col_mesh_path
+            if not self.col_mesh_resource_path:
+                self.col_mesh_resource_path = abs_col_mesh_path
+                afmb_yaml['low resolution path'] = abs_col_mesh_path
 
-        elif self.col_mesh_resource_path != abs_col_mesh_path:
-            body_data['low resolution path'] = abs_col_mesh_path
+            elif self.col_mesh_resource_path != abs_col_mesh_path:
+                body_data['low resolution path'] = abs_col_mesh_path
 
-        temp_mesh_name = Path(filename)
+            temp_mesh_name = Path(filename)
 
-        if temp_mesh_name.suffix in ('.ply', '.PLY', '.dae', '.DAE'):
-            body_data['mesh'] = col_filename
-        else:
-            body_data['mesh'] = filename
-        body_data['collision mesh'] = col_filename
+            if temp_mesh_name.suffix in ('.ply', '.PLY', '.dae', '.DAE'):
+                body_data['mesh'] = col_filename
+            else:
+                body_data['mesh'] = filename
+            body_data['collision mesh'] = col_filename
 
-        body.visual_offset = to_kdl_frame(visual_urdf.find('origin'))
+            body.visual_offset = to_kdl_frame(visual_urdf.find('origin'))
 
-        if collision_urdf is not None:
-            body.collision_offset = to_kdl_frame(collision_urdf.find('origin'))
+            if collision_urdf is not None:
+                body.collision_offset = to_kdl_frame(collision_urdf.find('origin'))
 
         if inertial_urdf is not None:
             body_data['mass'] = round(float(inertial_urdf.find('mass').attrib['value']), 3)
@@ -308,6 +376,39 @@ class CreateAFYAML:
             inv_child_temp_frame = child_temp_frame.Inverse()
             child_pivot = inv_child_temp_frame.p
             child_axis = inv_child_temp_frame.M * joint.axis
+
+            # The use of pivot and axis does not fully defined the connection and relative transform between two bodies
+            # it is very likely that we need an additional offset of the child body as in most of the cases of URDF's
+            # For this purpose, we calculate the offset as follows
+            r_c_p_afmb = rot_matrix_from_vecs(child_axis, parent_axis)
+            r_c_p_urdf = joint.origin.M
+
+            r_angular_offset = r_c_p_afmb.Inverse() * r_c_p_urdf
+
+            offset_axis_angle = r_angular_offset.GetRotAngle()
+            # print(axis_angle[0]),
+            # print(round(axis_angle[1][0], 1), round(axis_angle[1][1], 1), round(axis_angle[1][2], 1))
+
+            if abs(offset_axis_angle[0]) > 0.001:
+                print '*****************************'
+                print joint_data['name']
+                print 'Joint Axis, '
+                print '\t', joint.axis
+                print 'Offset Axis'
+                print '\t', offset_axis_angle[1]
+                offset_angle = offset_axis_angle[0]
+                offset_angle = round(offset_angle, 3)
+                print 'Offset Angle: \t', offset_angle
+
+                if abs(1.0 - dot(joint.axis, offset_axis_angle[1])) < 0.01:
+                    joint_data['offset'] = offset_angle
+                    print ': SAME DIRECTION'
+                elif abs(1.0 + dot(joint.axis, offset_axis_angle[1])) < 0.01:
+                    joint_data['offset'] = -offset_angle
+                    print ': OPPOSITE DIRECTION'
+                else:
+                    print 'ERROR: SHOULD\'NT GET HERE'
+
             child_pivot_data = joint_data["child pivot"]
             child_axis_data = joint_data["child axis"]
 
@@ -335,36 +436,11 @@ class CreateAFYAML:
             joint_limit_data['low'] = round(float(urdf_joint.find('limit').attrib['lower']), 3)
             joint_limit_data['high'] = round(float(urdf_joint.find('limit').attrib['upper']), 3)
 
+            joint_data['enable motor'] = 1
+
             afmb_yaml[joint_yaml_name] = joint_data
             self._joint_names_list.append(joint_yaml_name)
             # print(jointData)
-
-    def compute_parent_pivot_and_axis(self, parent_body, joint):
-        if parent_body.visual_offset != parent_body.collision_offset:
-            print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % parent_body.afmb_data['name'])
-            print('Visual Mesh Name: %s' % parent_body.afmb_data['mesh'])
-            print('Collision Mesh Name: %s' % parent_body.afmb_data['collision mesh'])
-            print('VISUAL FRAME: %s' % parent_body.visual_offset.p)
-            print('COLLISION FRAME: %s' % parent_body.collision_offset.p)
-        parent_temp_frame = parent_body.visual_offset.Inverse() * joint.origin
-        parent_pivot = parent_temp_frame.p
-        parent_axis = parent_temp_frame.M * joint.axis
-        return parent_pivot, parent_axis
-
-    # Since the URDF uses 4 frames for child links, 2 for our use, we have to account
-    # for that while computing child axis
-    def compute_child_pivot_and_axis(self, child_body, joint):
-        if child_body.visual_offset != child_body.collision_offset:
-            print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % child_body.afmb_data['name'])
-            print('Visual Mesh Name: %s' % child_body.afmb_data['mesh'])
-            print('Collision Mesh Name: %s' % child_body.afmb_data['collision mesh'])
-            print('VISUAL FRAME: %s' % child_body.visual_offset.p)
-            print('COLLISION FRAME: %s' % child_body.collision_offset.p)
-        child_temp_frame = child_body.visual_offset
-        inv_child_temp_frame = child_temp_frame.Inverse()
-        child_pivot = inv_child_temp_frame.p
-        child_axis = inv_child_temp_frame.M * joint.axis
-        return child_pivot, child_axis
 
     def generate_afmb_yaml(self, urdf_robot):
         urdf_links = urdf_robot.findall('link')
@@ -425,8 +501,11 @@ def main():
     af_multi_body_config.generate_afmb_yaml(robot)
 
     # If two arguments already specified, save to the second argument
+    save_to = ''
     if len(sys.argv) > 2:
         save_to = sys.argv[2]
+        af_multi_body_config.save_afmb_yaml(save_to)
+    elif save_to != '':
         af_multi_body_config.save_afmb_yaml(save_to)
     else:
         # Give one more chance to save to a file or give option to print to console
