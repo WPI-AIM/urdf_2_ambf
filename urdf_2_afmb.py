@@ -269,8 +269,8 @@ class CreateAFYAML:
         body_data = body.afmb_data
         body_data['name'] = urdf_link.attrib['name']
 
-        if urdf_link.attrib['name'] == 'world':
-            return
+        #if urdf_link.attrib['name'] == 'world':
+         #   return
         body_yaml_name = self.get_body_prefixed_name(urdf_link.attrib['name'])
 
         visual_urdf = urdf_link.find('visual')
@@ -312,8 +312,21 @@ class CreateAFYAML:
             if collision_urdf is not None:
                 body.collision_offset = to_kdl_frame(collision_urdf.find('origin'))
 
+                if (body.visual_offset.p - body.collision_offset.p).Norm() >= 0.001 or\
+                        (body.visual_offset.M != body.collision_offset.M):
+                        print 'WARNING: BODY \"', body_data['name'],\
+                            '\" - VISUAL AND COLLISION OFFSETs ARE DIFFERENT'
+                        print 'Visual Offset: '
+                        print body.visual_offset
+                        print 'Collision Offset: '
+                        print body.collision_offset
+
         if inertial_urdf is not None:
-            body_data['mass'] = round(float(inertial_urdf.find('mass').attrib['value']), 3)
+            mass = round(float(inertial_urdf.find('mass').attrib['value']), 3)
+            if mass == 0.0:
+                body_data['mass'] = 0.001
+            else:
+                body_data['mass'] = mass
 
             if inertial_urdf.find('inertia') is not None and not self._ignore_inertias:
                 body_data['inertial'] = {'ix': 0.0, 'iy': 0.0, 'iz': 0.0}
@@ -349,15 +362,17 @@ class CreateAFYAML:
             if urdf_joint.find('parent').attrib['link'] == 'world':
                 afmb_yaml[self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])]['mass'] = 0.0
                 print('Setting Mass of ', urdf_joint.find('child').attrib['link'], ' to 0.0')
+                return
 
         joint_yaml_name = self.get_joint_prefixed_name(urdf_joint.attrib['name'])
 
-        if urdf_joint.attrib['type'] == 'revolute':
+        if urdf_joint.attrib['type'] in ['revolute', 'continuous', 'prismatic']:
             joint = JointTemplate()
             joint_data = joint.afmb_data
             parent_body = self._bodies_map[urdf_joint.find('parent').attrib['link']]
             child_body = self._bodies_map[urdf_joint.find('child').attrib['link']]
             joint_data['name'] = urdf_joint.attrib['name']
+            joint_data['type'] = urdf_joint.attrib['type']
             joint_data['parent'] = self.get_body_prefixed_name(urdf_joint.find('parent').attrib['link'])
             joint_data['child'] = self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])
             joint.origin = to_kdl_frame(urdf_joint.find('origin'))
@@ -377,11 +392,11 @@ class CreateAFYAML:
             child_pivot = inv_child_temp_frame.p
             child_axis = inv_child_temp_frame.M * joint.axis
 
-            # The use of pivot and axis does not fully defined the connection and relative transform between two bodies
+            # The use of pivot and axis does not fully define the connection and relative transform between two bodies
             # it is very likely that we need an additional offset of the child body as in most of the cases of URDF's
             # For this purpose, we calculate the offset as follows
             r_c_p_afmb = rot_matrix_from_vecs(child_axis, parent_axis)
-            r_c_p_urdf = joint.origin.M
+            r_c_p_urdf = joint.origin.M * child_body.visual_offset.M
 
             r_angular_offset = r_c_p_afmb.Inverse() * r_c_p_urdf
 
@@ -390,22 +405,22 @@ class CreateAFYAML:
             # print(round(axis_angle[1][0], 1), round(axis_angle[1][1], 1), round(axis_angle[1][2], 1))
 
             if abs(offset_axis_angle[0]) > 0.001:
-                print '*****************************'
-                print joint_data['name']
-                print 'Joint Axis, '
-                print '\t', joint.axis
-                print 'Offset Axis'
-                print '\t', offset_axis_angle[1]
+                # print '*****************************'
+                # print joint_data['name']
+                # print 'Joint Axis, '
+                # print '\t', joint.axis
+                # print 'Offset Axis'
+                # print '\t', offset_axis_angle[1]
                 offset_angle = offset_axis_angle[0]
                 offset_angle = round(offset_angle, 3)
-                print 'Offset Angle: \t', offset_angle
+                # print 'Offset Angle: \t', offset_angle
 
                 if abs(1.0 - dot(joint.axis, offset_axis_angle[1])) < 0.01:
                     joint_data['offset'] = offset_angle
-                    print ': SAME DIRECTION'
+                    # print ': SAME DIRECTION'
                 elif abs(1.0 + dot(joint.axis, offset_axis_angle[1])) < 0.01:
                     joint_data['offset'] = -offset_angle
-                    print ': OPPOSITE DIRECTION'
+                    # print ': OPPOSITE DIRECTION'
                 else:
                     print 'ERROR: SHOULD\'NT GET HERE'
 
@@ -432,9 +447,11 @@ class CreateAFYAML:
             assign_xyz(child_pivot_data, child_pivot)
             assign_xyz(child_axis_data, child_axis)
 
-            joint_limit_data = joint_data["joint limits"]
-            joint_limit_data['low'] = round(float(urdf_joint.find('limit').attrib['lower']), 3)
-            joint_limit_data['high'] = round(float(urdf_joint.find('limit').attrib['upper']), 3)
+            urdf_joint_limit = urdf_joint.find('limit')
+            if urdf_joint_limit is not None:
+                joint_limit_data = joint_data["joint limits"]
+                joint_limit_data['low'] = round(float(urdf_joint_limit.attrib['lower']), 3)
+                joint_limit_data['high'] = round(float(urdf_joint_limit.attrib['upper']), 3)
 
             joint_data['enable motor'] = 1
 
@@ -454,6 +471,8 @@ class CreateAFYAML:
 
         self._afmb_yaml['high resolution path'] = ""
         self._afmb_yaml['low resolution path'] = ""
+
+        self._afmb_yaml['ignore inter-collision'] = 'True'
 
         for urdf_link in urdf_links:
             self.load_body_data(self._afmb_yaml, urdf_link)
@@ -497,6 +516,7 @@ def main():
         exit()
     root = ET.parse(urdf_filepath)
     robot = root.getroot()
+    # This flag is to set to ignore the collision between all the the bodies in this MultiBody
     af_multi_body_config = CreateAFYAML(ignore_inertial_offset=True)
     af_multi_body_config.generate_afmb_yaml(robot)
 
