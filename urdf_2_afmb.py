@@ -129,14 +129,26 @@ def scalar_mul(mat, s):
 
 
 # https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d/897677#897677
-def rot_matrix_from_vecs(v1, v2):
+def rot_matrix_from_vecs(vec_a, vec_b):
     out = Rotation()
-    vcross = v1 * v2
-    vdot = dot(v1, v2)
-    if 1.0 - vdot < 0.01:
+    vec_a.Normalize()
+    vec_b.Normalize()
+    vcross = vec_a * vec_b
+    vdot = dot(vec_a, vec_b)
+    # Check if the vectors are in the same direction
+    if 1.0 - vdot < 0.1:
         return out
-    elif 1.0 + vdot < 0.01:
-        print 'IMPLEMENT THIS'
+    # Or in the opposite direction
+    elif 1.0 + vdot < 0.1:
+        ny = Vector(0, 1, 0)
+        temp_dot = dot(vec_a, ny)
+        if -0.9 < abs(temp_dot) < 0.9:
+            axis = vec_a * ny
+            out = out.Rot(axis, 3.14)
+        else:
+            nz = Vector(0, 0, 1)
+            axis = vec_a * nz
+            out = out.Rot(axis, 3.14)
     else:
         skew_v = skew_mat(vcross)
         out = add_mat(add_mat(Rotation(), skew_v), scalar_mul(
@@ -147,14 +159,16 @@ def rot_matrix_from_vecs(v1, v2):
 # Body Template for the some commonly used of afBody's data
 class BodyTemplate:
     def __init__(self):
-        self.afmb_data = {'name': "",
-                          'mesh': "",
-                          'mass': 0.0,
-                          'scale': 1.0,
-                          'location': {
-                             'position': {'x': 0, 'y': 0, 'z': 0},
-                             'orientation': {'r': 0, 'p': 0, 'y': 0}},
-                          'color': 'random'}
+        self.afmb_data = OrderedDict()
+        self.afmb_data['name'] = ""
+        self.afmb_data['mesh'] = ""
+        self.afmb_data['mass'] = 0.0
+        self.afmb_data['scale'] = 1.0
+        self.afmb_data['location'] = {'position': {'x': 0, 'y': 0, 'z': 0},
+                                      'orientation': {'r': 0, 'p': 0, 'y': 0}}
+        self.afmb_data['inertial offset'] = {'position': {'x': 0, 'y': 0, 'z': 0},
+                                             'orientation': {'r': 0, 'p': 0, 'y': 0}}
+        self.afmb_data['color'] = 'random'
         self.inertial_offset = Frame()
         self.visual_offset = Frame()
         self.collision_offset = Frame()
@@ -163,16 +177,17 @@ class BodyTemplate:
 # Joint Template for the some commonly used of afJoint's data
 class JointTemplate:
     def __init__(self):
-        self.afmb_data = {'name': '',
-                          'parent': '',
-                          'child': '',
-                          'parent axis': {'x': 0, 'y': 0.0, 'z': 1.0},
-                          'parent pivot': {'x': 0, 'y': 0.0, 'z': 0},
-                          'child axis': {'x': 0, 'y': 0.0, 'z': 1.0},
-                          'child pivot': {'x': 0, 'y': 0.0, 'z': 0},
-                          'joint limits': {'low': -1.2, 'high': 1.2},
-                          'enable motor': 0,
-                          'max motor impulse': 0.05}
+        self.afmb_data = OrderedDict()
+        self.afmb_data['name'] = ''
+        self.afmb_data['parent'] = ''
+        self.afmb_data['child'] = ''
+        self.afmb_data['parent axis'] = {'x': 0, 'y': 0.0, 'z': 1.0}
+        self.afmb_data['parent pivot'] = {'x': 0, 'y': 0.0, 'z': 0}
+        self.afmb_data['child axis'] = {'x': 0, 'y': 0.0, 'z': 1.0}
+        self.afmb_data['child pivot'] = {'x': 0, 'y': 0.0, 'z': 0}
+        self.afmb_data['joint limits'] = {'low': -1.2, 'high': 1.2}
+        self.afmb_data['enable motor'] = 0
+        self.afmb_data['max motor impulse'] = 0
         self.origin = Vector()
         self.axis = Vector(0.0, 0.0, 1.0)
 
@@ -186,7 +201,7 @@ class CreateAFYAML:
         self._bodies_map = {}
         self.mesh_resource_path = ''
         self.col_mesh_resource_path = ''
-        self._ros_packages = {}
+        self._ros_packages = {'dvrk_description': '/home/adnan/wpi_ws/src/dvrk_env/dvrk_description/'}
         self._ignore_inertial_offsets = ignore_inertial_offset
         self._ignore_inertias = ignore_inertias
         self._save_as = ''
@@ -302,6 +317,8 @@ class CreateAFYAML:
             temp_mesh_name = Path(filename)
 
             if temp_mesh_name.suffix in ('.ply', '.PLY', '.dae', '.DAE'):
+                print('WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_mesh_name.suffix)\
+                    , ' meshes yet, please convert to .STL or .OBJ format, taking the collision mesh as the visual mesh'
                 body_data['mesh'] = col_filename
             else:
                 body_data['mesh'] = filename
@@ -320,6 +337,19 @@ class CreateAFYAML:
                         print body.visual_offset
                         print 'Collision Offset: '
                         print body.collision_offset
+
+            # If color is defined in urdf link, set it for afmb
+            urdf_material = visual_urdf.find('material')
+            if urdf_material is not None:
+                urdf_link_color = urdf_material.find('color')
+                if urdf_link_color is not None:
+                    del body_data['color']
+                    urdf_link_rgba = [float(i) for i in urdf_link_color.attrib['rgba'].split(' ')]
+                    body_data['color rgba'] = {'r': 1.0, 'g': 1.0, 'b': 1.0, 'a': 1.0}
+                    body_data['color rgba']['r'] = round(urdf_link_rgba[0], 4)
+                    body_data['color rgba']['g'] = round(urdf_link_rgba[1], 4)
+                    body_data['color rgba']['b'] = round(urdf_link_rgba[2], 4)
+                    body_data['color rgba']['a'] = round(urdf_link_rgba[3], 4)
 
         if inertial_urdf is not None:
             mass = round(float(inertial_urdf.find('mass').attrib['value']), 3)
@@ -356,6 +386,12 @@ class CreateAFYAML:
         afmb_yaml[body_yaml_name] = body_data
         self._body_names_list.append(body_yaml_name)
         # print(body_data)
+
+    def round_mat(self, mat):
+        for i in range(0, 3):
+            for j in range(0, 3):
+                mat[i, j] = round(mat[i, j], 3)
+        return mat
 
     def load_joint_data(self, afmb_yaml, urdf_joint):
         if urdf_joint.attrib['type'] == 'fixed':
@@ -411,8 +447,8 @@ class CreateAFYAML:
                 # print '\t', joint.axis
                 # print 'Offset Axis'
                 # print '\t', offset_axis_angle[1]
-                offset_angle = offset_axis_angle[0]
-                offset_angle = round(offset_angle, 3)
+                offset_angle = round(offset_axis_angle[0], 3)
+                offset_axis = offset_axis_angle[1]
                 # print 'Offset Angle: \t', offset_angle
 
                 if abs(1.0 - dot(joint.axis, offset_axis_angle[1])) < 0.01:
@@ -422,7 +458,20 @@ class CreateAFYAML:
                     joint_data['offset'] = -offset_angle
                     # print ': OPPOSITE DIRECTION'
                 else:
-                    print 'ERROR: SHOULD\'NT GET HERE'
+                    print 'ERROR {}: SHOULD\'NT GET HERE'.format(joint_data['name'])
+                    print 'Offset Angle: ', offset_angle
+                    print 'Offset Axis: ', offset_axis
+                    r_c_p_afmb = self.round_mat(r_c_p_afmb)
+                    r_c_p_urdf = self.round_mat(r_c_p_urdf)
+                    r_angular_offset = self.round_mat(r_angular_offset)
+
+                    print 'R URDF: '
+                    print r_c_p_urdf
+                    print 'R AFMB'
+                    print r_c_p_afmb
+                    print 'R_DIFF'
+                    print r_angular_offset
+                    print '-----------------------------'
 
             child_pivot_data = joint_data["child pivot"]
             child_axis_data = joint_data["child axis"]
@@ -521,7 +570,7 @@ def main():
     af_multi_body_config.generate_afmb_yaml(robot)
 
     # If two arguments already specified, save to the second argument
-    save_to = ''
+    save_to = '/home/adnan/chai3d/modules/BULLET/bin/resources/config/puzzles/urdf-suj.yaml'
     if len(sys.argv) > 2:
         save_to = sys.argv[2]
         af_multi_body_config.save_afmb_yaml(save_to)
