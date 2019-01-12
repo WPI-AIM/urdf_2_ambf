@@ -283,18 +283,18 @@ class CreateAFYAML:
         body = BodyTemplate()
         body_data = body.afmb_data
         body_data['name'] = urdf_link.attrib['name']
+        urdf_link_visual_data = urdf_link.find('visual')
+        urdf_link_collision_data = urdf_link.find('collision')
+        urdf_link_inertial_data = urdf_link.find('inertial')
 
-        #if urdf_link.attrib['name'] == 'world':
-         #   return
         body_yaml_name = self.get_body_prefixed_name(urdf_link.attrib['name'])
 
-        visual_urdf = urdf_link.find('visual')
-        collision_urdf = urdf_link.find('collision')
-        inertial_urdf = urdf_link.find('inertial')
-        if visual_urdf is not None:
-            abs_mesh_path, filename = self.get_path_and_file_name(visual_urdf.find('geometry').find('mesh').attrib['filename'])
-            if collision_urdf is not None:
-                abs_col_mesh_path, col_filename = self.get_path_and_file_name(collision_urdf.find('geometry').find('mesh').attrib['filename'])
+        if urdf_link_visual_data is not None:
+            visual_mesh_filename_data = urdf_link_visual_data.find('geometry').find('mesh').attrib['filename']
+            abs_mesh_path, filename = self.get_path_and_file_name(visual_mesh_filename_data)
+            if urdf_link_collision_data is not None:
+                collision_mesh_filename_data = urdf_link_collision_data.find('geometry').find('mesh').attrib['filename']
+                abs_col_mesh_path, col_filename = self.get_path_and_file_name(collision_mesh_filename_data)
             else:
                 abs_col_mesh_path = abs_mesh_path
                 col_filename = filename
@@ -314,20 +314,26 @@ class CreateAFYAML:
             elif self.col_mesh_resource_path != abs_col_mesh_path:
                 body_data['low resolution path'] = abs_col_mesh_path
 
-            temp_mesh_name = Path(filename)
+            temp_visual_mesh_name = Path(filename)
+            temp_collision_mesh_name = Path(col_filename)
 
-            if temp_mesh_name.suffix in ('.ply', '.PLY', '.dae', '.DAE'):
-                print('WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_mesh_name.suffix)\
+            if temp_visual_mesh_name.suffix in ('.stl', '.STL', '.obj', '.OBJ'):
+                body_data['mesh'] = filename
+            elif temp_collision_mesh_name.suffix in ('.stl', '.STL', '.obj', '.OBJ'):
+                print('*** WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix) \
                     , ' meshes yet, please convert to .STL or .OBJ format, taking the collision mesh as the visual mesh'
                 body_data['mesh'] = col_filename
             else:
+                print('*** WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix) \
+                    , ' meshes yet, please convert to .STL or .OBJ format'
                 body_data['mesh'] = filename
+
             body_data['collision mesh'] = col_filename
 
-            body.visual_offset = to_kdl_frame(visual_urdf.find('origin'))
+            body.visual_offset = to_kdl_frame(urdf_link_visual_data.find('origin'))
 
-            if collision_urdf is not None:
-                body.collision_offset = to_kdl_frame(collision_urdf.find('origin'))
+            if urdf_link_collision_data is not None:
+                body.collision_offset = to_kdl_frame(urdf_link_collision_data.find('origin'))
 
                 if (body.visual_offset.p - body.collision_offset.p).Norm() >= 0.001 or\
                         (body.visual_offset.M != body.collision_offset.M):
@@ -339,7 +345,7 @@ class CreateAFYAML:
                         print body.collision_offset
 
             # If color is defined in urdf link, set it for afmb
-            urdf_material = visual_urdf.find('material')
+            urdf_material = urdf_link_visual_data.find('material')
             if urdf_material is not None:
                 urdf_link_color = urdf_material.find('color')
                 if urdf_link_color is not None:
@@ -351,21 +357,21 @@ class CreateAFYAML:
                     body_data['color rgba']['b'] = round(urdf_link_rgba[2], 4)
                     body_data['color rgba']['a'] = round(urdf_link_rgba[3], 4)
 
-        if inertial_urdf is not None:
-            mass = round(float(inertial_urdf.find('mass').attrib['value']), 3)
+        if urdf_link_inertial_data is not None:
+            mass = round(float(urdf_link_inertial_data.find('mass').attrib['value']), 3)
             if mass == 0.0:
                 body_data['mass'] = 0.001
             else:
                 body_data['mass'] = mass
 
-            if inertial_urdf.find('inertia') is not None and not self._ignore_inertias:
+            if urdf_link_inertial_data.find('inertia') is not None and not self._ignore_inertias:
                 body_data['inertial'] = {'ix': 0.0, 'iy': 0.0, 'iz': 0.0}
-                body_data['inertial']['ix'] = float(inertial_urdf.find('inertia').attrib['ixx'])
-                body_data['inertial']['iy'] = float(inertial_urdf.find('inertia').attrib['iyy'])
-                body_data['inertial']['iz'] = float(inertial_urdf.find('inertia').attrib['izz'])
+                body_data['inertial']['ix'] = float(urdf_link_inertial_data.find('inertia').attrib['ixx'])
+                body_data['inertial']['iy'] = float(urdf_link_inertial_data.find('inertia').attrib['iyy'])
+                body_data['inertial']['iz'] = float(urdf_link_inertial_data.find('inertia').attrib['izz'])
 
-            if inertial_urdf.find('origin') is not None and not self._ignore_inertial_offsets:
-                body.inertial_offset = to_kdl_frame(inertial_urdf.find('origin'))
+            if urdf_link_inertial_data.find('origin') is not None and not self._ignore_inertial_offsets:
+                body.inertial_offset = to_kdl_frame(urdf_link_inertial_data.find('origin'))
 
                 body_data['inertial offset'] = {'position': {'x': 0.0, 'y': 0.0, 'z': 0.0}}
                 inertial_off_pos = body_data['inertial offset']['position']
