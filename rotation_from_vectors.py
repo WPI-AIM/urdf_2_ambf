@@ -37,14 +37,14 @@ def rot_matrix_from_vecs(vec_a, vec_b):
         return out
     # Or in the opposite direction
     elif 1.0 + vdot < 0.1:
-        ny = PyKDL.Vector(0, 1, 0)
-        temp_dot = PyKDL.dot(vec_a, ny)
+        nx = PyKDL.Vector(1, 0, 0)
+        temp_dot = PyKDL.dot(vec_a, nx)
         if -0.9 < abs(temp_dot) < 0.9:
-            axis = vec_a * ny
+            axis = vec_a * nx
             out = out.Rot(axis, 3.14)
         else:
-            nz = PyKDL.Vector(0, 0, 1)
-            axis = vec_a * nz
+            ny = PyKDL.Vector(0, 1, 0)
+            axis = vec_a * ny
             out = out.Rot(axis, 3.14)
     else:
         skew_v = skew_mat(vcross)
