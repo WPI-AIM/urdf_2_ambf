@@ -446,7 +446,7 @@ class CreateAFYAML:
             # print(axis_angle[0]),
             # print(round(axis_angle[1][0], 1), round(axis_angle[1][1], 1), round(axis_angle[1][2], 1))
 
-            if abs(offset_axis_angle[0]) > 0.001:
+            if abs(offset_axis_angle[0]) > 0.01:
                 # print '*****************************'
                 # print joint_data['name']
                 # print 'Joint Axis, '
@@ -457,10 +457,10 @@ class CreateAFYAML:
                 offset_axis = offset_axis_angle[1]
                 # print 'Offset Angle: \t', offset_angle
 
-                if abs(1.0 - dot(joint.axis, offset_axis_angle[1])) < 0.01:
+                if abs(1.0 - dot(joint.axis, offset_axis_angle[1])) < 0.1:
                     joint_data['offset'] = offset_angle
                     # print ': SAME DIRECTION'
-                elif abs(1.0 + dot(joint.axis, offset_axis_angle[1])) < 0.01:
+                elif abs(1.0 + dot(joint.axis, offset_axis_angle[1])) < 0.1:
                     joint_data['offset'] = -offset_angle
                     # print ': OPPOSITE DIRECTION'
                 else:
