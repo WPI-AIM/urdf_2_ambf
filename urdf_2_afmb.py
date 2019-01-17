@@ -438,7 +438,7 @@ class CreateAFYAML:
             # it is very likely that we need an additional offset of the child body as in most of the cases of URDF's
             # For this purpose, we calculate the offset as follows
             r_c_p_afmb = rot_matrix_from_vecs(child_axis, parent_axis)
-            r_c_p_urdf = joint.origin.M * child_body.visual_offset.M
+            r_c_p_urdf = parent_body.visual_offset.M.Inverse() * joint.origin.M * child_body.visual_offset.M
 
             r_angular_offset = r_c_p_afmb.Inverse() * r_c_p_urdf
 
@@ -467,6 +467,7 @@ class CreateAFYAML:
                     print 'ERROR {}: SHOULD\'NT GET HERE'.format(joint_data['name'])
                     print 'Offset Angle: ', offset_angle
                     print 'Offset Axis: ', offset_axis
+                    print 'Joint Axis: ', joint.axis
                     r_c_p_afmb = self.round_mat(r_c_p_afmb)
                     r_c_p_urdf = self.round_mat(r_c_p_urdf)
                     r_angular_offset = self.round_mat(r_angular_offset)
