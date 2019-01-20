@@ -169,9 +169,15 @@ class BodyTemplate:
         self.afmb_data['inertial offset'] = {'position': {'x': 0, 'y': 0, 'z': 0},
                                              'orientation': {'r': 0, 'p': 0, 'y': 0}}
         self.afmb_data['color'] = 'random'
+
         self.inertial_offset = Frame()
         self.visual_offset = Frame()
         self.collision_offset = Frame()
+        self.parent = None
+        self.children = []
+        # If the urdf link has not visual geometry, it means that its purely for offsets and hence
+        # mark it as kinematic
+        self.is_kinematic = False
 
 
 # Joint Template for the some commonly used of afJoint's data
@@ -320,12 +326,12 @@ class CreateAFYAML:
             if temp_visual_mesh_name.suffix in ('.stl', '.STL', '.obj', '.OBJ'):
                 body_data['mesh'] = filename
             elif temp_collision_mesh_name.suffix in ('.stl', '.STL', '.obj', '.OBJ'):
-                print('*** WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix) \
-                    , ' meshes yet, please convert to .STL or .OBJ format, taking the collision mesh as the visual mesh'
+                print('*** WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix \
+                    , ' meshes yet, please convert to .STL or .OBJ format, taking the collision mesh as the visual mesh')
                 body_data['mesh'] = col_filename
             else:
-                print('*** WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix) \
-                    , ' meshes yet, please convert to .STL or .OBJ format'
+                print('*** WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix \
+                    , ' meshes yet, please convert to .STL or .OBJ format')
                 body_data['mesh'] = filename
 
             body_data['collision mesh'] = col_filename
@@ -337,12 +343,12 @@ class CreateAFYAML:
 
                 if (body.visual_offset.p - body.collision_offset.p).Norm() >= 0.001 or\
                         (body.visual_offset.M != body.collision_offset.M):
-                        print 'WARNING: BODY \"', body_data['name'],\
-                            '\" - VISUAL AND COLLISION OFFSETs ARE DIFFERENT'
-                        print 'Visual Offset: '
-                        print body.visual_offset
-                        print 'Collision Offset: '
-                        print body.collision_offset
+                        print ('WARNING: BODY \"', body_data['name'],\
+                            '\`" - VISUAL AND COLLISION OFFSETs ARE DIFFERENT')
+                        print ('Visual Offset: ')
+                        print (body.visual_offset)
+                        print ('Collision Offset: ')
+                        print (body.collision_offset)
 
             # If color is defined in urdf link, set it for afmb
             urdf_material = urdf_link_visual_data.find('material')
@@ -384,8 +390,18 @@ class CreateAFYAML:
                 inertial_off_rot['y'] = round(body.inertial_offset.M.GetRPY()[2], 3)
 
         else:
-
-            body_data['mass'] = 0.0
+            if body_data['name'] != 'world':
+                if urdf_link_visual_data is not None:
+                    # Set super low values to prevent thing being an implicit fixed body
+                    body_data['mass'] = 0.1
+                    # Since the inertial is not defined, delete the intertial offset so that the afmb
+                    # can calculate the intertial offset by itself
+                    del body_data['inertial offset']
+                else:
+                    body_data['mass'] = 0.1
+                    body_data['inertia'] = {'ix': 0.001, 'iz': 0.001, 'iy': 0.001}
+                    body_data['mesh'] = 'empty'
+                    body.is_kinematic = True
 
         self._bodies_map[urdf_link.attrib['name']] = body
 
@@ -403,6 +419,10 @@ class CreateAFYAML:
         if urdf_joint.attrib['type'] == 'fixed':
             if urdf_joint.find('parent').attrib['link'] == 'world':
                 afmb_yaml[self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])]['mass'] = 0.0
+                afmb_yaml[self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])] \
+                    ['location']['position'] = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+                afmb_yaml[self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])] \
+                    ['location']['orientation'] = {'r': 0.0, 'p': 0.0, 'y': 0.0}
                 print('Setting Mass of ', urdf_joint.find('child').attrib['link'], ' to 0.0')
                 return
 
@@ -464,21 +484,129 @@ class CreateAFYAML:
                     joint_data['offset'] = -offset_angle
                     # print ': OPPOSITE DIRECTION'
                 else:
-                    print 'ERROR {}: SHOULD\'NT GET HERE'.format(joint_data['name'])
-                    print 'Offset Angle: ', offset_angle
-                    print 'Offset Axis: ', offset_axis
-                    print 'Joint Axis: ', joint.axis
+                    print ('ERROR {}: SHOULD\'NT GET HERE'.format(joint_data['name']))
+                    print ('Offset Angle: ', offset_angle)
+                    print ('Offset Axis: ', offset_axis)
+                    print ('Joint Axis: ', joint.axis)
                     r_c_p_afmb = self.round_mat(r_c_p_afmb)
                     r_c_p_urdf = self.round_mat(r_c_p_urdf)
                     r_angular_offset = self.round_mat(r_angular_offset)
 
-                    print 'R URDF: '
-                    print r_c_p_urdf
-                    print 'R AFMB'
-                    print r_c_p_afmb
-                    print 'R_DIFF'
-                    print r_angular_offset
-                    print '-----------------------------'
+                    print ('R URDF: ')
+                    print (r_c_p_urdf)
+                    print ('R AFMB')
+                    print (r_c_p_afmb)
+                    print ('R_DIFF')
+                    print (r_angular_offset)
+                    print ('-----------------------------')
+
+            child_pivot_data = joint_data["child pivot"]
+            child_axis_data = joint_data["child axis"]
+
+            # There is a bug in bullet discussed here:
+            # https: // github.com / bulletphysics / bullet3 / issues / 2031
+            # As a work around, we want to tweak the axis or body masses just a bit
+            # It's better to tweak masses than axes
+            if parent_body.afmb_data['mass'] > 0.0:
+                factA = 1.0 / parent_body.afmb_data['mass']
+                if child_body.afmb_data['mass'] > 0.0:
+                    factB = 1.0 / child_body.afmb_data['mass']
+                    weighted_axis = factA * parent_axis + factB * child_axis
+                    if weighted_axis.Norm() < 0.001:
+                        print("Weighted Axis for joint \"%s\" is zero, to avoid breaking Bullet, "
+                              "increasing the mass of parent body \"%s\" and decreasing the mass"
+                              " of child body \"%s\" by 1%%"
+                              % (joint.afmb_data['name'], parent_body.afmb_data['name'], child_body.afmb_data['name']))
+                        parent_body.afmb_data['mass'] = parent_body.afmb_data['mass'] * 1.01
+                        child_body.afmb_data['mass'] = child_body.afmb_data['mass'] * 0.99
+
+            assign_xyz(child_pivot_data, child_pivot)
+            assign_xyz(child_axis_data, child_axis)
+
+            urdf_joint_limit = urdf_joint.find('limit')
+            if urdf_joint_limit is not None:
+                joint_limit_data = joint_data["joint limits"]
+                joint_limit_data['low'] = round(float(urdf_joint_limit.attrib['lower']), 3)
+                joint_limit_data['high'] = round(float(urdf_joint_limit.attrib['upper']), 3)
+
+            joint_data['enable motor'] = 1
+
+            afmb_yaml[joint_yaml_name] = joint_data
+            self._joint_names_list.append(joint_yaml_name)
+            # print(jointData)
+
+        elif urdf_joint.attrib['type'] == 'fixed':
+            joint = JointTemplate()
+            joint_data = joint.afmb_data
+            parent_body = self._bodies_map[urdf_joint.find('parent').attrib['link']]
+            child_body = self._bodies_map[urdf_joint.find('child').attrib['link']]
+            joint_data['name'] = urdf_joint.attrib['name']
+            joint_data['type'] = urdf_joint.attrib['type']
+            joint_data['parent'] = self.get_body_prefixed_name(urdf_joint.find('parent').attrib['link'])
+            joint_data['child'] = self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])
+            joint.origin = to_kdl_frame(urdf_joint.find('origin'))
+
+            parent_temp_frame = parent_body.visual_offset.Inverse() * joint.origin
+            parent_pivot = parent_temp_frame.p
+            parent_axis = Vector(0, 0, 1)
+            parent_pivot_data = joint_data["parent pivot"]
+            parent_axis_data = joint_data["parent axis"]
+
+            assign_xyz(parent_pivot_data, parent_pivot)
+            assign_xyz(parent_axis_data, parent_axis)
+
+            child_temp_frame = child_body.visual_offset
+            inv_child_temp_frame = child_temp_frame.Inverse()
+            child_pivot = inv_child_temp_frame.p
+            t_c_p = parent_body.visual_offset.M.Inverse() * joint.origin.M * child_body.visual_offset.M
+            child_axis = t_c_p * Vector(0, 0, 1)
+
+            # The use of pivot and axis does not fully define the connection and relative transform between two bodies
+            # it is very likely that we need an additional offset of the child body as in most of the cases of URDF's
+            # For this purpose, we calculate the offset as follows
+            r_c_p_afmb = rot_matrix_from_vecs(child_axis, parent_axis)
+            r_c_p_urdf = parent_body.visual_offset.M.Inverse() * joint.origin.M * child_body.visual_offset.M
+
+            r_angular_offset = r_c_p_afmb.Inverse() * r_c_p_urdf
+
+            offset_axis_angle = r_angular_offset.GetRotAngle()
+            # print(axis_angle[0]),
+            # print(round(axis_angle[1][0], 1), round(axis_angle[1][1], 1), round(axis_angle[1][2], 1))
+
+            if abs(offset_axis_angle[0]) > 0.01:
+                # print '*****************************'
+                # print joint_data['name']
+                # print 'Joint Axis, '
+                # print '\t', joint.axis
+                # print 'Offset Axis'
+                # print '\t', offset_axis_angle[1]
+                offset_angle = round(offset_axis_angle[0], 3)
+                offset_axis = offset_axis_angle[1]
+                # print 'Offset Angle: \t', offset_angle
+
+                if abs(1.0 - dot(joint.axis, offset_axis_angle[1])) < 0.1:
+                    joint_data['offset'] = offset_angle
+                    # print ': SAME DIRECTION'
+                elif abs(1.0 + dot(joint.axis, offset_axis_angle[1])) < 0.1:
+                    joint_data['offset'] = -offset_angle
+                    # print ': OPPOSITE DIRECTION'
+                else:
+                    print ('ERROR ', joint_data['name'] ,': SHOULD\'NT GET HERE')
+                    # print 'Offset Angle: ', offset_angle
+                    # print 'Offset Axis: ', offset_axis
+                    # print 'Joint Axis: ', joint.axis
+                    # r_c_p_afmb = self.round_mat(r_c_p_afmb)
+                    # r_c_p_urdf = self.round_mat(r_c_p_urdf)
+                    # r_angular_offset = self.round_mat(r_angular_offset)
+                    #
+                    # print 'R URDF: '
+                    # print r_c_p_urdf
+                    # print 'R AFMB'
+                    # print r_c_p_afmb
+                    # print 'R_DIFF'
+                    # print r_angular_offset
+                    # print '-----------------------------'
+                    joint_data['offset'] = offset_angle
 
             child_pivot_data = joint_data["child pivot"]
             child_axis_data = joint_data["child axis"]
