@@ -163,6 +163,7 @@ class BodyTemplate:
         self.afmb_data['name'] = ""
         self.afmb_data['mesh'] = ""
         self.afmb_data['mass'] = 0.0
+        self.afmb_data['inertia'] = {'ix': 0.0, 'iy': 0.0, 'iz': 0.0}
         self.afmb_data['scale'] = 1.0
         self.afmb_data['location'] = {'position': {'x': 0, 'y': 0, 'z': 0},
                                       'orientation': {'r': 0, 'p': 0, 'y': 0}}
@@ -295,6 +296,33 @@ class CreateAFYAML:
 
         body_yaml_name = self.get_body_prefixed_name(urdf_link.attrib['name'])
 
+        # Check to see a place holder link
+        # This link could either be world or some intermediate link in the chain
+        if urdf_link_visual_data is None and urdf_link_inertial_data is None:
+            if body_data['name'] == 'world':
+                # This is the world link and is fixed for all intents and purposes
+                # Set relevant fields
+                body_data['mass'] = 0
+                body_data['inertia'] = {'ix': 0.0, 'iz': 0.0, 'iy': 0.0}
+                del body_data['inertial offset']
+            else:
+                # This in an intermediate link in the chain
+                # This is allowed in URDF but doesn't make sense in a
+                # dynamic world, since any moving link cannot have 0 mass
+                # and inertia. Since nothing is specified, set it to super
+                # low value and throw a warning to user
+                body_data['mass'] = 0.1
+                body_data['inertia'] = {'ix': 0.01, 'iz': 0.01, 'iy': 0.01}
+                body.is_kinematic = True
+                print('WARNING: ', body_data['name'], 'has no visual or inertial elements, this'
+                                                      ' is impossible in a dynamic world thus setting'
+                                                      ' super low values of m and I')
+
+            self._bodies_map[urdf_link.attrib['name']] = body
+            afmb_yaml[body_yaml_name] = body_data
+            self._body_names_list.append(body_yaml_name)
+            return
+
         if urdf_link_visual_data is not None:
             visual_mesh_filename_data = urdf_link_visual_data.find('geometry').find('mesh').attrib['filename']
             abs_mesh_path, filename = self.get_path_and_file_name(visual_mesh_filename_data)
@@ -366,15 +394,17 @@ class CreateAFYAML:
         if urdf_link_inertial_data is not None:
             mass = round(float(urdf_link_inertial_data.find('mass').attrib['value']), 3)
             if mass == 0.0:
-                body_data['mass'] = 0.001
-            else:
-                body_data['mass'] = mass
+                print('WARNING, ', body_data['name'], ' , mass is 0.0, this body shall be fixed in space')
+
+            body_data['mass'] = mass
 
             if urdf_link_inertial_data.find('inertia') is not None and not self._ignore_inertias:
-                body_data['inertial'] = {'ix': 0.0, 'iy': 0.0, 'iz': 0.0}
-                body_data['inertial']['ix'] = float(urdf_link_inertial_data.find('inertia').attrib['ixx'])
-                body_data['inertial']['iy'] = float(urdf_link_inertial_data.find('inertia').attrib['iyy'])
-                body_data['inertial']['iz'] = float(urdf_link_inertial_data.find('inertia').attrib['izz'])
+                body_data['inertia'] = {'ix': 0.0, 'iy': 0.0, 'iz': 0.0}
+                body_data['inertia']['ix'] = float(urdf_link_inertial_data.find('inertia').attrib['ixx'])
+                body_data['inertia']['iy'] = float(urdf_link_inertial_data.find('inertia').attrib['iyy'])
+                body_data['inertia']['iz'] = float(urdf_link_inertial_data.find('inertia').attrib['izz'])
+            else:
+                del body_data['inertia']
 
             if urdf_link_inertial_data.find('origin') is not None and not self._ignore_inertial_offsets:
                 body.inertial_offset = to_kdl_frame(urdf_link_inertial_data.find('origin'))
@@ -388,20 +418,18 @@ class CreateAFYAML:
                 inertial_off_rot['r'] = round(body.inertial_offset.M.GetRPY()[0], 3)
                 inertial_off_rot['p'] = round(body.inertial_offset.M.GetRPY()[1], 3)
                 inertial_off_rot['y'] = round(body.inertial_offset.M.GetRPY()[2], 3)
+            else:
+                # Delete the inertial offset and let the afmb application calculate it
+                del body_data['inertial offset']
 
         else:
-            if body_data['name'] != 'world':
-                if urdf_link_visual_data is not None:
-                    # Set super low values to prevent thing being an implicit fixed body
-                    body_data['mass'] = 0.1
-                    # Since the inertial is not defined, delete the intertial offset so that the afmb
-                    # can calculate the intertial offset by itself
-                    del body_data['inertial offset']
-                else:
-                    body_data['mass'] = 0.1
-                    body_data['inertia'] = {'ix': 0.001, 'iz': 0.001, 'iy': 0.001}
-                    body_data['mesh'] = 'empty'
-                    body.is_kinematic = True
+            # Set super low values to prevent this being an implicit fixed body
+            body_data['mass'] = 0.1
+            # Delete the inertial offset and inertia so the afmb application can calculate it
+            del body_data['inertial offset']
+            del body_data['inertia']
+            print('WARNING: ', body_data['name'], ' inertial data is not specified, setting m and I to'
+                                                  ' super low values')
 
         self._bodies_map[urdf_link.attrib['name']] = body
 
@@ -416,16 +444,6 @@ class CreateAFYAML:
         return mat
 
     def load_joint_data(self, afmb_yaml, urdf_joint):
-        if urdf_joint.attrib['type'] == 'fixed':
-            if urdf_joint.find('parent').attrib['link'] == 'world':
-                afmb_yaml[self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])]['mass'] = 0.0
-                afmb_yaml[self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])] \
-                    ['location']['position'] = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-                afmb_yaml[self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])] \
-                    ['location']['orientation'] = {'r': 0.0, 'p': 0.0, 'y': 0.0}
-                print('Setting Mass of ', urdf_joint.find('child').attrib['link'], ' to 0.0')
-                return
-
         joint_yaml_name = self.get_joint_prefixed_name(urdf_joint.attrib['name'])
 
         if urdf_joint.attrib['type'] in ['revolute', 'continuous', 'prismatic']:
