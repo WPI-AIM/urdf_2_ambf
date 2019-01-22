@@ -51,11 +51,11 @@ def to_kdl_frame(urdf_frame):
     f = Frame()
     if urdf_frame is not None:
         if 'xyz' in urdf_frame.attrib:
-            xyz = [float(i) for i in urdf_frame.attrib['xyz'].split(' ')]
+            xyz = [float(i) for i in urdf_frame.attrib['xyz'].split()]
             for i in range(0, 3):
                 f.p[i] = xyz[i]
         if 'rpy' in urdf_frame.attrib:
-            rpy = [float(i) for i in urdf_frame.attrib['rpy'].split(' ')]
+            rpy = [float(i) for i in urdf_frame.attrib['rpy'].split()]
             f.M = Rotation.RPY(rpy[0], rpy[1], rpy[2])
 
     return f
@@ -85,7 +85,7 @@ def skew_mat(v):
 
 def compute_parent_pivot_and_axis(parent_body, joint):
     if parent_body.visual_offset != parent_body.collision_offset:
-        print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % parent_body.afmb_data['name'])
+        print('%s WARNING: VISUAL AND COLLISION OFFSET\'S DONT MATCH' % parent_body.afmb_data['name'])
         print('Visual Mesh Name: %s' % parent_body.afmb_data['mesh'])
         print('Collision Mesh Name: %s' % parent_body.afmb_data['collision mesh'])
         print('VISUAL FRAME: %s' % parent_body.visual_offset.p)
@@ -100,7 +100,7 @@ def compute_parent_pivot_and_axis(parent_body, joint):
 # for that while computing child axis
 def compute_child_pivot_and_axis(child_body, joint):
     if child_body.visual_offset != child_body.collision_offset:
-        print('%s WARNING: VISUAL AND COLLISION ORIGINS DONT MATCH' % child_body.afmb_data['name'])
+        print('%s WARNING: VISUAL AND COLLISION OFFSET\'S DONT MATCH' % child_body.afmb_data['name'])
         print('Visual Mesh Name: %s' % child_body.afmb_data['mesh'])
         print('Collision Mesh Name: %s' % child_body.afmb_data['collision mesh'])
         print('VISUAL FRAME: %s' % child_body.visual_offset.p)
@@ -299,7 +299,7 @@ class CreateAFYAML:
         # Check to see a place holder link
         # This link could either be world or some intermediate link in the chain
         if urdf_link_visual_data is None and urdf_link_inertial_data is None:
-            if body_data['name'] == 'world':
+            if body_data['name'] in ['world', 'World', 'WORLD']:
                 # This is the world link and is fixed for all intents and purposes
                 # Set relevant fields
                 body_data['mass'] = 0
@@ -314,7 +314,7 @@ class CreateAFYAML:
                 body_data['mass'] = 0.1
                 body_data['inertia'] = {'ix': 0.01, 'iz': 0.01, 'iy': 0.01}
                 body.is_kinematic = True
-                print('WARNING: ', body_data['name'], 'has no visual or inertial elements, this'
+                print('WARNING: ', body_data['name'], ' has no visual or inertial elements, this'
                                                       ' is impossible in a dynamic world thus setting'
                                                       ' super low values of m and I')
 
@@ -371,8 +371,7 @@ class CreateAFYAML:
 
                 if (body.visual_offset.p - body.collision_offset.p).Norm() >= 0.001 or\
                         (body.visual_offset.M != body.collision_offset.M):
-                        print ('WARNING: BODY \"', body_data['name'],\
-                            '\`" - VISUAL AND COLLISION OFFSETs ARE DIFFERENT')
+                        print ('WARNING: BODY ', body_data['name'], ' - VISUAL AND COLLISION OFFSET\'S DONT MATCH')
                         print ('Visual Offset: ')
                         print (body.visual_offset)
                         print ('Collision Offset: ')
@@ -392,19 +391,24 @@ class CreateAFYAML:
                     body_data['color rgba']['a'] = round(urdf_link_rgba[3], 4)
 
         if urdf_link_inertial_data is not None:
-            mass = round(float(urdf_link_inertial_data.find('mass').attrib['value']), 3)
+            mass = round(float(urdf_link_inertial_data.find('mass').attrib['value']), 6)
             if mass == 0.0:
-                print('WARNING, ', body_data['name'], ' , mass is 0.0, this body shall be fixed in space')
+                print('WARNING: ', body_data['name'], ' mass is 0.0, this body shall be fixed in space which'
+                                                      ' is inconsistent with geometric bodies hence setting'
+                                                      ' m to super low value, inertia tensor shall be calculate from'
+                                                      ' the mesh itself')
+                mass = 0.001
+                del body_data['inertia']
+            else:
+
+                if urdf_link_inertial_data.find('inertia') is not None and not self._ignore_inertias:
+                    body_data['inertia']['ix'] = float(urdf_link_inertial_data.find('inertia').attrib['ixx'])
+                    body_data['inertia']['iy'] = float(urdf_link_inertial_data.find('inertia').attrib['iyy'])
+                    body_data['inertia']['iz'] = float(urdf_link_inertial_data.find('inertia').attrib['izz'])
+                else:
+                    del body_data['inertia']
 
             body_data['mass'] = mass
-
-            if urdf_link_inertial_data.find('inertia') is not None and not self._ignore_inertias:
-                body_data['inertia'] = {'ix': 0.0, 'iy': 0.0, 'iz': 0.0}
-                body_data['inertia']['ix'] = float(urdf_link_inertial_data.find('inertia').attrib['ixx'])
-                body_data['inertia']['iy'] = float(urdf_link_inertial_data.find('inertia').attrib['iyy'])
-                body_data['inertia']['iz'] = float(urdf_link_inertial_data.find('inertia').attrib['izz'])
-            else:
-                del body_data['inertia']
 
             if urdf_link_inertial_data.find('origin') is not None and not self._ignore_inertial_offsets:
                 body.inertial_offset = to_kdl_frame(urdf_link_inertial_data.find('origin'))
@@ -428,8 +432,9 @@ class CreateAFYAML:
             # Delete the inertial offset and inertia so the afmb application can calculate it
             del body_data['inertial offset']
             del body_data['inertia']
-            print('WARNING: ', body_data['name'], ' inertial data is not specified, setting m and I to'
-                                                  ' super low values')
+            print('WARNING: ', body_data['name'], ' inertial data is not specified, setting m '
+                                                  ' super low value, inertia tensor shall be calculate from'
+                                                  ' the mesh itself')
 
         self._bodies_map[urdf_link.attrib['name']] = body
 
