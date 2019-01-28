@@ -193,8 +193,6 @@ class JointTemplate:
         self.afmb_data['child axis'] = {'x': 0, 'y': 0.0, 'z': 1.0}
         self.afmb_data['child pivot'] = {'x': 0, 'y': 0.0, 'z': 0}
         self.afmb_data['joint limits'] = {'low': -1.2, 'high': 1.2}
-        self.afmb_data['enable motor'] = 0
-        self.afmb_data['max motor impulse'] = 0
         self.origin = Vector()
         self.axis = Vector(0.0, 0.0, 1.0)
 
@@ -323,15 +321,22 @@ class CreateAFYAML:
             self._body_names_list.append(body_yaml_name)
             return
 
+        abs_mesh_path = ''
+        abs_col_mesh_path = ''
+        filename = ''
+        col_filename = ''
         if urdf_link_visual_data is not None:
-            visual_mesh_filename_data = urdf_link_visual_data.find('geometry').find('mesh').attrib['filename']
-            abs_mesh_path, filename = self.get_path_and_file_name(visual_mesh_filename_data)
+            if urdf_link_visual_data.find('geometry').find('mesh') is not None:
+                visual_mesh_filename_data = urdf_link_visual_data.find('geometry').find('mesh').attrib['filename']
+                abs_mesh_path, filename = self.get_path_and_file_name(visual_mesh_filename_data)
+
             if urdf_link_collision_data is not None:
-                collision_mesh_filename_data = urdf_link_collision_data.find('geometry').find('mesh').attrib['filename']
-                abs_col_mesh_path, col_filename = self.get_path_and_file_name(collision_mesh_filename_data)
-            else:
-                abs_col_mesh_path = abs_mesh_path
-                col_filename = filename
+                if urdf_link_collision_data.find('geometry').find('mesh') is not None:
+                    collision_mesh_filename_data = urdf_link_collision_data.find('geometry').find('mesh').attrib['filename']
+                    abs_col_mesh_path, col_filename = self.get_path_and_file_name(collision_mesh_filename_data)
+                else:
+                    abs_col_mesh_path = abs_mesh_path
+                    col_filename = filename
 
             # Sanity check to include the high and low res paths for each body only if they are different
             if not self.mesh_resource_path:
@@ -349,19 +354,12 @@ class CreateAFYAML:
                 body_data['low resolution path'] = abs_col_mesh_path
 
             temp_visual_mesh_name = Path(filename)
-            temp_collision_mesh_name = Path(col_filename)
 
-            if temp_visual_mesh_name.suffix in ('.stl', '.STL', '.obj', '.OBJ'):
-                body_data['mesh'] = filename
-            elif temp_collision_mesh_name.suffix in ('.stl', '.STL', '.obj', '.OBJ'):
-                print('WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix \
-                    , ' meshes yet, please convert to .STL or .OBJ format, taking the collision mesh as the visual mesh')
-                body_data['mesh'] = col_filename
-            else:
-                print('WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix \
-                    , ' meshes yet, please convert to .STL or .OBJ format')
-                body_data['mesh'] = filename
+            if temp_visual_mesh_name.suffix not in ('.stl', '.STL', '.obj', '.OBJ'):
+                print('WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix
+                      , ' meshes yet, please use the blender afmb add-on to remedy this situation')
 
+            body_data['mesh'] = filename
             body_data['collision mesh'] = col_filename
 
             body.visual_offset = to_kdl_frame(urdf_link_visual_data.find('origin'))
@@ -551,13 +549,15 @@ class CreateAFYAML:
             assign_xyz(child_pivot_data, child_pivot)
             assign_xyz(child_axis_data, child_axis)
 
-            urdf_joint_limit = urdf_joint.find('limit')
-            if urdf_joint_limit is not None:
-                joint_limit_data = joint_data["joint limits"]
-                joint_limit_data['low'] = round(float(urdf_joint_limit.attrib['lower']), 3)
-                joint_limit_data['high'] = round(float(urdf_joint_limit.attrib['upper']), 3)
-
-            joint_data['enable motor'] = 1
+            if urdf_joint.attrib['type'] == 'continuous':
+                del joint_data['joint limits']['low']
+                del joint_data['joint limits']['high']
+            else:
+                urdf_joint_limit = urdf_joint.find('limit')
+                if urdf_joint_limit is not None:
+                    joint_limit_data = joint_data["joint limits"]
+                    joint_limit_data['low'] = round(float(urdf_joint_limit.attrib['lower']), 3)
+                    joint_limit_data['high'] = round(float(urdf_joint_limit.attrib['upper']), 3)
 
             afmb_yaml[joint_yaml_name] = joint_data
             self._joint_names_list.append(joint_yaml_name)
