@@ -3,11 +3,11 @@
 # Lab: aimlab.wpi.edu
 
 tool_info = {
-    "name": "URDF To AFMB ",
+    "name": "URDF To AMBF ",
     "author": "Adnan Munawar",
     "version": (0, 1),
-    "description": "Tool to convert a URDF to AFMB for AFMB Framework",
-    "url": "https://github.com/adnanmunawar/urdf_2_afmb",
+    "description": "Tool to convert a URDF to AMBF for AMBF Framework",
+    "url": "https://github.com/adnanmunawar/urdf_2_ambf",
     }
 
 
@@ -95,9 +95,9 @@ def skew_mat(v):
 
 def compute_parent_pivot_and_axis(parent_body, joint):
     if parent_body.visual_offset != parent_body.collision_offset:
-        print('%s WARNING: VISUAL AND COLLISION OFFSET\'S DONT MATCH' % parent_body.afmb_data['name'])
-        print('Visual Mesh Name: %s' % parent_body.afmb_data['mesh'])
-        print('Collision Mesh Name: %s' % parent_body.afmb_data['collision mesh'])
+        print('%s WARNING: VISUAL AND COLLISION OFFSET\'S DONT MATCH' % parent_body.ambf_data['name'])
+        print('Visual Mesh Name: %s' % parent_body.ambf_data['mesh'])
+        print('Collision Mesh Name: %s' % parent_body.ambf_data['collision mesh'])
         print('VISUAL FRAME: %s' % parent_body.visual_offset.p)
         print('COLLISION FRAME: %s' % parent_body.collision_offset.p)
     parent_temp_frame = parent_body.visual_offset.Inverse() * joint.origin
@@ -110,9 +110,9 @@ def compute_parent_pivot_and_axis(parent_body, joint):
 # for that while computing child axis
 def compute_child_pivot_and_axis(child_body, joint):
     if child_body.visual_offset != child_body.collision_offset:
-        print('%s WARNING: VISUAL AND COLLISION OFFSET\'S DONT MATCH' % child_body.afmb_data['name'])
-        print('Visual Mesh Name: %s' % child_body.afmb_data['mesh'])
-        print('Collision Mesh Name: %s' % child_body.afmb_data['collision mesh'])
+        print('%s WARNING: VISUAL AND COLLISION OFFSET\'S DONT MATCH' % child_body.ambf_data['name'])
+        print('Visual Mesh Name: %s' % child_body.ambf_data['mesh'])
+        print('Collision Mesh Name: %s' % child_body.ambf_data['collision mesh'])
         print('VISUAL FRAME: %s' % child_body.visual_offset.p)
         print('COLLISION FRAME: %s' % child_body.collision_offset.p)
     child_temp_frame = child_body.visual_offset
@@ -169,17 +169,17 @@ def rot_matrix_from_vecs(vec_a, vec_b):
 # Body Template for the some commonly used of afBody's data
 class BodyTemplate:
     def __init__(self):
-        self.afmb_data = OrderedDict()
-        self.afmb_data['name'] = ""
-        self.afmb_data['mesh'] = ""
-        self.afmb_data['mass'] = 0.0
-        self.afmb_data['inertia'] = {'ix': 0.0, 'iy': 0.0, 'iz': 0.0}
-        self.afmb_data['scale'] = 1.0
-        self.afmb_data['location'] = {'position': {'x': 0, 'y': 0, 'z': 0},
+        self.ambf_data = OrderedDict()
+        self.ambf_data['name'] = ""
+        self.ambf_data['mesh'] = ""
+        self.ambf_data['mass'] = 0.0
+        self.ambf_data['inertia'] = {'ix': 0.0, 'iy': 0.0, 'iz': 0.0}
+        self.ambf_data['scale'] = 1.0
+        self.ambf_data['location'] = {'position': {'x': 0, 'y': 0, 'z': 0},
                                       'orientation': {'r': 0, 'p': 0, 'y': 0}}
-        self.afmb_data['inertial offset'] = {'position': {'x': 0, 'y': 0, 'z': 0},
+        self.ambf_data['inertial offset'] = {'position': {'x': 0, 'y': 0, 'z': 0},
                                              'orientation': {'r': 0, 'p': 0, 'y': 0}}
-        self.afmb_data['color'] = 'random'
+        self.ambf_data['color'] = 'random'
 
         self.inertial_offset = Frame()
         self.visual_offset = Frame()
@@ -194,29 +194,31 @@ class BodyTemplate:
 # Joint Template for the some commonly used of afJoint's data
 class JointTemplate:
     def __init__(self):
-        self.afmb_data = OrderedDict()
-        self.afmb_data['name'] = ''
-        self.afmb_data['parent'] = ''
-        self.afmb_data['child'] = ''
-        self.afmb_data['parent axis'] = {'x': 0, 'y': 0.0, 'z': 1.0}
-        self.afmb_data['parent pivot'] = {'x': 0, 'y': 0.0, 'z': 0}
-        self.afmb_data['child axis'] = {'x': 0, 'y': 0.0, 'z': 1.0}
-        self.afmb_data['child pivot'] = {'x': 0, 'y': 0.0, 'z': 0}
-        self.afmb_data['joint limits'] = {'low': -1.2, 'high': 1.2}
+        self.ambf_data = OrderedDict()
+        self.ambf_data['name'] = ''
+        self.ambf_data['parent'] = ''
+        self.ambf_data['child'] = ''
+        self.ambf_data['parent axis'] = {'x': 0, 'y': 0.0, 'z': 1.0}
+        self.ambf_data['parent pivot'] = {'x': 0, 'y': 0.0, 'z': 0}
+        self.ambf_data['child axis'] = {'x': 0, 'y': 0.0, 'z': 1.0}
+        self.ambf_data['child pivot'] = {'x': 0, 'y': 0.0, 'z': 0}
+        self.ambf_data['joint limits'] = {'low': -1.2, 'high': 1.2}
         self.origin = Vector()
         self.axis = Vector(0.0, 0.0, 1.0)
 
 
-class CreateAFYAML:
+class CreateAMBF:
 
     def __init__(self, ignore_inertial_offset=True, ignore_inertias=True):
-        self._afmb_yaml = None
+        self._ambf_config = None
         self._body_names_list = []
         self._joint_names_list = []
         self._bodies_map = {}
         self.mesh_resource_path = ''
         self.col_mesh_resource_path = ''
-        self._ros_packages = {}
+        self._ros_packages = {'pr2_description': '/home/adnan/wpi_ws/src/pr2_common/pr2_description/',
+                              'dvrk_description': '/home/adnan/wpi_ws/src/dvrk_env/dvrk_description/',
+                              'dvrk_model': '/home/adnan/dvrk_ws/src/dvrk-ros/dvrk_model/'}
         self._ignore_inertial_offsets = ignore_inertial_offset
         self._ignore_inertias = ignore_inertias
         self._save_as = ''
@@ -294,9 +296,9 @@ class CreateAFYAML:
 
         return abs_mesh_dir, filename
 
-    def load_body_data(self, afmb_yaml, urdf_link):
+    def load_body_data(self, ambf_config, urdf_link):
         body = BodyTemplate()
-        body_data = body.afmb_data
+        body_data = body.ambf_data
         body_data['name'] = urdf_link.attrib['name']
         urdf_link_visual_data = urdf_link.find('visual')
         urdf_link_collision_data = urdf_link.find('collision')
@@ -327,7 +329,7 @@ class CreateAFYAML:
                                                       ' super low values of m and I')
 
             self._bodies_map[urdf_link.attrib['name']] = body
-            afmb_yaml[body_yaml_name] = body_data
+            ambf_config[body_yaml_name] = body_data
             self._body_names_list.append(body_yaml_name)
             return
 
@@ -351,14 +353,14 @@ class CreateAFYAML:
             # Sanity check to include the high and low res paths for each body only if they are different
             if not self.mesh_resource_path:
                 self.mesh_resource_path = abs_mesh_path
-                afmb_yaml['high resolution path'] = abs_mesh_path
+                ambf_config['high resolution path'] = abs_mesh_path
 
             elif self.mesh_resource_path != abs_mesh_path:
                 body_data['high resolution path'] = abs_mesh_path
 
             if not self.col_mesh_resource_path:
                 self.col_mesh_resource_path = abs_col_mesh_path
-                afmb_yaml['low resolution path'] = abs_col_mesh_path
+                ambf_config['low resolution path'] = abs_col_mesh_path
 
             elif self.col_mesh_resource_path != abs_col_mesh_path:
                 body_data['low resolution path'] = abs_col_mesh_path
@@ -367,7 +369,7 @@ class CreateAFYAML:
 
             if temp_visual_mesh_name.suffix not in ('.stl', '.STL', '.obj', '.OBJ'):
                 print('WARNING, ', body_data['name'], ': WE DON\'T SUPPORT ', temp_visual_mesh_name.suffix
-                      , ' meshes yet, please use the blender afmb add-on to remedy this situation')
+                      , ' meshes yet, please use the blender ambf add-on to remedy this situation')
 
             body_data['mesh'] = filename
             body_data['collision mesh'] = col_filename
@@ -385,7 +387,7 @@ class CreateAFYAML:
                         print ('Collision Offset: ')
                         print (body.collision_offset)
 
-            # If color is defined in urdf link, set it for afmb
+            # If color is defined in urdf link, set it for ambf
             urdf_material = urdf_link_visual_data.find('material')
             if urdf_material is not None:
                 urdf_link_color = urdf_material.find('color')
@@ -431,13 +433,13 @@ class CreateAFYAML:
                 inertial_off_rot['p'] = round(body.inertial_offset.M.GetRPY()[1], 3)
                 inertial_off_rot['y'] = round(body.inertial_offset.M.GetRPY()[2], 3)
             else:
-                # Delete the inertial offset and let the afmb application calculate it
+                # Delete the inertial offset and let the ambf application calculate it
                 del body_data['inertial offset']
 
         else:
             # Set super low values to prevent this being an implicit fixed body
             body_data['mass'] = 0.1
-            # Delete the inertial offset and inertia so the afmb application can calculate it
+            # Delete the inertial offset and inertia so the ambf application can calculate it
             del body_data['inertial offset']
             del body_data['inertia']
             print('WARNING: ', body_data['name'], ' inertial data is not specified, setting m '
@@ -446,7 +448,7 @@ class CreateAFYAML:
 
         self._bodies_map[urdf_link.attrib['name']] = body
 
-        afmb_yaml[body_yaml_name] = body_data
+        ambf_config[body_yaml_name] = body_data
         self._body_names_list.append(body_yaml_name)
         # print(body_data)
 
@@ -456,12 +458,12 @@ class CreateAFYAML:
                 mat[i, j] = round(mat[i, j], 3)
         return mat
 
-    def load_joint_data(self, afmb_yaml, urdf_joint):
+    def load_joint_data(self, ambf_config, urdf_joint):
         joint_yaml_name = self.get_joint_prefixed_name(urdf_joint.attrib['name'])
 
         if urdf_joint.attrib['type'] in ['revolute', 'continuous', 'prismatic', 'fixed']:
             joint = JointTemplate()
-            joint_data = joint.afmb_data
+            joint_data = joint.ambf_data
             parent_body = self._bodies_map[urdf_joint.find('parent').attrib['link']]
             child_body = self._bodies_map[urdf_joint.find('child').attrib['link']]
             joint_data['name'] = urdf_joint.attrib['name']
@@ -493,10 +495,10 @@ class CreateAFYAML:
             # The use of pivot and axis does not fully define the connection and relative transform between two bodies
             # it is very likely that we need an additional offset of the child body as in most of the cases of URDF's
             # For this purpose, we calculate the offset as follows
-            r_c_p_afmb = rot_matrix_from_vecs(child_axis, parent_axis)
+            r_c_p_ambf = rot_matrix_from_vecs(child_axis, parent_axis)
             r_c_p_urdf = parent_body.visual_offset.M.Inverse() * joint.origin.M * child_body.visual_offset.M
 
-            r_angular_offset = r_c_p_afmb.Inverse() * r_c_p_urdf
+            r_angular_offset = r_c_p_ambf.Inverse() * r_c_p_urdf
 
             offset_axis_angle = r_angular_offset.GetRotAngle()
             # print(axis_angle[0]),
@@ -524,14 +526,14 @@ class CreateAFYAML:
                     # print ('Offset Angle: ', offset_angle)
                     # print ('Offset Axis: ', offset_axis)
                     # print ('Joint Axis: ', joint.axis)
-                    # r_c_p_afmb = self.round_mat(r_c_p_afmb)
+                    # r_c_p_ambf = self.round_mat(r_c_p_ambf)
                     # r_c_p_urdf = self.round_mat(r_c_p_urdf)
                     # r_angular_offset = self.round_mat(r_angular_offset)
                     #
                     # print ('R URDF: ')
                     # print (r_c_p_urdf)
-                    # print ('R AFMB')
-                    # print (r_c_p_afmb)
+                    # print ('R AMBF')
+                    # print (r_c_p_ambf)
                     # print ('R_DIFF')
                     # print (r_angular_offset)
                     # print ('-----------------------------')
@@ -543,18 +545,18 @@ class CreateAFYAML:
             # https: // github.com / bulletphysics / bullet3 / issues / 2031
             # As a work around, we want to tweak the axis or body masses just a bit
             # It's better to tweak masses than axes
-            if parent_body.afmb_data['mass'] > 0.0:
-                factA = 1.0 / parent_body.afmb_data['mass']
-                if child_body.afmb_data['mass'] > 0.0:
-                    factB = 1.0 / child_body.afmb_data['mass']
+            if parent_body.ambf_data['mass'] > 0.0:
+                factA = 1.0 / parent_body.ambf_data['mass']
+                if child_body.ambf_data['mass'] > 0.0:
+                    factB = 1.0 / child_body.ambf_data['mass']
                     weighted_axis = factA * parent_axis + factB * child_axis
                     if weighted_axis.Norm() < 0.001:
                         print("WARNING: ", "Weighted Axis for joint \"%s\" is zero, to avoid breaking Bullet, "
                               "increasing the mass of parent body \"%s\" and decreasing the mass"
                               " of child body \"%s\" by 1%%"
-                              % (joint.afmb_data['name'], parent_body.afmb_data['name'], child_body.afmb_data['name']))
-                        parent_body.afmb_data['mass'] = parent_body.afmb_data['mass'] * 1.01
-                        child_body.afmb_data['mass'] = child_body.afmb_data['mass'] * 0.99
+                              % (joint.ambf_data['name'], parent_body.ambf_data['name'], child_body.ambf_data['name']))
+                        parent_body.ambf_data['mass'] = parent_body.ambf_data['mass'] * 1.01
+                        child_body.ambf_data['mass'] = child_body.ambf_data['mass'] * 0.99
 
             assign_xyz(child_pivot_data, child_pivot)
             assign_xyz(child_axis_data, child_axis)
@@ -569,38 +571,38 @@ class CreateAFYAML:
                     joint_limit_data['low'] = round(float(urdf_joint_limit.attrib['lower']), 3)
                     joint_limit_data['high'] = round(float(urdf_joint_limit.attrib['upper']), 3)
 
-            afmb_yaml[joint_yaml_name] = joint_data
+            ambf_config[joint_yaml_name] = joint_data
             self._joint_names_list.append(joint_yaml_name)
             # print(jointData)
 
-    def generate_afmb_yaml(self, urdf_robot):
+    def generate_ambf_config(self, urdf_robot):
         urdf_links = urdf_robot.findall('link')
         urdf_joints = urdf_robot.findall('joint')
 
-        self._afmb_yaml = OrderedDict()
+        self._ambf_config = OrderedDict()
 
         # For inorder processing, set the bodies and joints tag at the top of the map
-        self._afmb_yaml['bodies'] = []
-        self._afmb_yaml['joints'] = []
+        self._ambf_config['bodies'] = []
+        self._ambf_config['joints'] = []
 
-        self._afmb_yaml['high resolution path'] = ""
-        self._afmb_yaml['low resolution path'] = ""
+        self._ambf_config['high resolution path'] = ""
+        self._ambf_config['low resolution path'] = ""
 
-        self._afmb_yaml['ignore inter-collision'] = 'True'
+        self._ambf_config['ignore inter-collision'] = 'True'
 
         for urdf_link in urdf_links:
-            self.load_body_data(self._afmb_yaml, urdf_link)
+            self.load_body_data(self._ambf_config, urdf_link)
 
         for urdf_joint in urdf_joints:
-            self.load_joint_data(self._afmb_yaml, urdf_joint)
+            self.load_joint_data(self._ambf_config, urdf_joint)
 
         # Now populate the bodies and joints tag
-        self._afmb_yaml['bodies'] = self._body_names_list
-        self._afmb_yaml['joints'] = self._joint_names_list
+        self._ambf_config['bodies'] = self._body_names_list
+        self._ambf_config['joints'] = self._joint_names_list
 
         print('SUCCESSFULLY GENERATED')
 
-    def save_afmb_yaml(self, output_file):
+    def save_ambf_config(self, output_file):
         self._save_as = output_file
         file_name = os.path.basename(self._save_as)
         save_path = os.path.dirname(self._save_as)
@@ -608,10 +610,10 @@ class CreateAFYAML:
             file_name = 'default.yaml'
         output_file_name = os.path.join(save_path, file_name)
         output_file = open(output_file_name, 'w')
-        yaml.dump(self._afmb_yaml, output_file)
+        yaml.dump(self._ambf_config, output_file)
 
-        header_str = "# AFMB Version: %s\n" \
-                     "# Generated By: urdf2afmb \n" \
+        header_str = "# AMBF Version: %s\n" \
+                     "# Generated By: urdf2ambf \n" \
                      "# Link: %s\n" \
                      "# Generated on: %s\n" \
                      % (str(tool_info['version']).replace(', ', '.'),
@@ -620,8 +622,8 @@ class CreateAFYAML:
         prepend_comment_to_file(output_file_name, header_str)
         print('Saved to: \"%s\"', output_file_name)
 
-    def print_afmb_yaml(self):
-        print (self._afmb_yaml)
+    def print_ambf_config(self):
+        print (self._ambf_config)
 
 
 # Courtesy: https://stackoverflow.com/questions/5914627/prepend-line-to-beginning-of-a-file
@@ -649,27 +651,27 @@ def main():
     root = ET.parse(urdf_filepath)
     robot = root.getroot()
     # This flag is to set to ignore the collision between all the the bodies in this MultiBody
-    af_multi_body_config = CreateAFYAML(ignore_inertial_offset=True)
-    af_multi_body_config.generate_afmb_yaml(robot)
+    af_multi_body_config = CreateAMBF(ignore_inertial_offset=True)
+    af_multi_body_config.generate_ambf_config(robot)
 
     # If two arguments already specified, save to the second argument
     save_to = '/home/adnan/chai3d/modules/BULLET/bin/resources/config/puzzles/urdf-suj.yaml'
     if len(sys.argv) > 2:
         save_to = sys.argv[2]
-        af_multi_body_config.save_afmb_yaml(save_to)
+        af_multi_body_config.save_ambf_config(save_to)
     elif save_to != '':
-        af_multi_body_config.save_afmb_yaml(save_to)
+        af_multi_body_config.save_ambf_config(save_to)
     else:
         # Give one more chance to save to a file or give option to print to console
         if sys.version_info[0] < 3:
-            save_to = raw_input("Specify filepath to save AFMB or enter \'x\' to print to console: ")
+            save_to = raw_input("Specify filepath to save AMBF or enter \'x\' to print to console: ")
         else:
-            save_to = input("Specify filepath to save AFMB or enter \'x\' to print to console: ")
+            save_to = input("Specify filepath to save AMBF or enter \'x\' to print to console: ")
 
         if save_to == 'x':
-            af_multi_body_config.print_afmb_yaml()
+            af_multi_body_config.print_ambf_config()
         else:
-            af_multi_body_config.save_afmb_yaml(save_to)
+            af_multi_body_config.save_ambf_config(save_to)
 
 
 if __name__ == "__main__":
