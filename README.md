@@ -24,7 +24,10 @@ added and modified in the AMBF Yaml config files.
 
 
 #### Usage:
-1. __python urdf_2_ambf <urdf_file> <save_to>__
-2. __python urdf_2_ambf <urdf_file>__
+1. `python urdf_2_ambf <urdf_file> <save_to>`
+
+Example: `python urdf_2_ambf /home/user/ros_ws/my_robot.urdf /home/user/my_robot.yaml`
+
+2. `python urdf_2_ambf <urdf_file>`
 	1. _Then specify output file at prompt_
 	2. Or _Press 'x' to print to console_
