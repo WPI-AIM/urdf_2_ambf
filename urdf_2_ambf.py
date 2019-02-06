@@ -31,7 +31,10 @@ def setup_yaml():
     yaml.add_representer(OrderedDict, represent_dictionary_order)
 
 
-global urdf_filepath
+# Global Config Class
+class CommonConfig:
+    urdf_filepath = ''
+    robot_name = ''
 
 
 # Enum Class for Mesh Type
@@ -203,6 +206,7 @@ class JointTemplate:
         self.ambf_data['child axis'] = {'x': 0, 'y': 0.0, 'z': 1.0}
         self.ambf_data['child pivot'] = {'x': 0, 'y': 0.0, 'z': 0}
         self.ambf_data['joint limits'] = {'low': -1.2, 'high': 1.2}
+        self.ambf_data['controller'] = {'P': 1000, 'I': 0, 'D': 10}
         self.origin = Vector()
         self.axis = Vector(0.0, 0.0, 1.0)
 
@@ -225,10 +229,10 @@ class CreateAMBF:
         self.body_name_prefix = 'BODY '
         self.joint_name_prefix = 'JOINT '
 
-    def get_body_prefixed_name(self, urdf_body_str):
+    def add_body_prefix_str(self, urdf_body_str):
         return self.body_name_prefix + urdf_body_str
 
-    def get_joint_prefixed_name(self, urdf_joint_str):
+    def add_joint_prefix_str(self, urdf_joint_str):
         return self.joint_name_prefix + urdf_joint_str
 
     def get_path_from_user_input(self, filepath):
@@ -262,7 +266,6 @@ class CreateAMBF:
         return package_path
 
     def get_path_and_file_name(self, filepath):
-        global urdf_filepath
         filepath = Path(filepath)
         if filepath.parts[0] == 'package:':
 
@@ -287,7 +290,7 @@ class CreateAMBF:
             filename = filepath.name
         else:
             # This means that the part is relative to the location of the URDF
-            abs_mesh_dir = os.path.join(os.path.dirname(urdf_filepath), os.path.dirname(str(filepath))) + '/'
+            abs_mesh_dir = os.path.join(os.path.dirname(CommonConfig.urdf_filepath), os.path.dirname(str(filepath))) + '/'
             filename = filepath.name
 
         if not os.path.exists(os.path.join(abs_mesh_dir, filename)):
@@ -304,7 +307,7 @@ class CreateAMBF:
         urdf_link_collision_data = urdf_link.find('collision')
         urdf_link_inertial_data = urdf_link.find('inertial')
 
-        body_yaml_name = self.get_body_prefixed_name(urdf_link.attrib['name'])
+        body_yaml_name = self.add_body_prefix_str(urdf_link.attrib['name'])
 
         # Check to see a place holder link
         # This link could either be world or some intermediate link in the chain
@@ -459,7 +462,7 @@ class CreateAMBF:
         return mat
 
     def load_joint_data(self, ambf_config, urdf_joint):
-        joint_yaml_name = self.get_joint_prefixed_name(urdf_joint.attrib['name'])
+        joint_yaml_name = self.add_joint_prefix_str(urdf_joint.attrib['name'])
 
         if urdf_joint.attrib['type'] in ['revolute', 'continuous', 'prismatic', 'fixed']:
             joint = JointTemplate()
@@ -468,8 +471,8 @@ class CreateAMBF:
             child_body = self._bodies_map[urdf_joint.find('child').attrib['link']]
             joint_data['name'] = urdf_joint.attrib['name']
             joint_data['type'] = urdf_joint.attrib['type']
-            joint_data['parent'] = self.get_body_prefixed_name(urdf_joint.find('parent').attrib['link'])
-            joint_data['child'] = self.get_body_prefixed_name(urdf_joint.find('child').attrib['link'])
+            joint_data['parent'] = self.add_body_prefix_str(urdf_joint.find('parent').attrib['link'])
+            joint_data['child'] = self.add_body_prefix_str(urdf_joint.find('child').attrib['link'])
             joint.origin = to_kdl_frame(urdf_joint.find('origin'))
 
             if urdf_joint.attrib['type'] == 'fixed':
@@ -589,6 +592,7 @@ class CreateAMBF:
         self._ambf_config['low resolution path'] = ""
 
         self._ambf_config['ignore inter-collision'] = 'True'
+        self._ambf_config['namespace'] = '/ambf/env/' + urdf_robot.attrib['name'] + '/'
 
         for urdf_link in urdf_links:
             self.load_body_data(self._ambf_config, urdf_link)
@@ -636,20 +640,20 @@ def prepend_comment_to_file(filename, comment):
 
 
 def main():
-    global urdf_filepath
     setup_yaml()
     if len(sys.argv) > 1:
-        urdf_filepath = sys.argv[1]
-        if os.path.exists(urdf_filepath):
-            print("Specified File: \"%s\"", urdf_filepath)
+        CommonConfig.urdf_filepath = sys.argv[1]
+        if os.path.exists(CommonConfig.urdf_filepath):
+            print("Specified File: \"%s\"", CommonConfig.urdf_filepath)
         else:
-            print("Filepath: \"%s\" does not exist on this machine, exiting", urdf_filepath)
+            print("Filepath: \"%s\" does not exist on this machine, exiting", CommonConfig.urdf_filepath)
             exit()
     else:
         print("No URDF File Specified")
         exit()
-    root = ET.parse(urdf_filepath)
+    root = ET.parse(CommonConfig.urdf_filepath)
     robot = root.getroot()
+    CommonConfig.robot_name = robot.attrib['name']
     # This flag is to set to ignore the collision between all the the bodies in this MultiBody
     af_multi_body_config = CreateAMBF(ignore_inertial_offset=True)
     af_multi_body_config.generate_ambf_config(robot)

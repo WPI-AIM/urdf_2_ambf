@@ -10,7 +10,7 @@ Email: amunawar@wpi.edu
 1. This is a python converter for converting URDF files to compatible AMBF file format. 
 AMBF stands for (Asynchoronous Multi-Body Framework Multi-Body). AMBF is real-time dynamics engine
 based on Bullet and CHAI-3D with ROS Support on Linux. The source code is located at:
-"https://github.com/WPI-AIM/chai3d"
+"https://github.com/WPI-AIM/ambf"
 
 2. AMBF Config files are akin to URDF or SDF but are written in YAML rather than XML. AMBF also supports
 soft bodies as well as multiple unconnected, semi-connected and fully connected dynamic bodies in simulation.
