@@ -8,7 +8,7 @@ Email: amunawar@wpi.edu
 
 #### Decription:
 1. This is a python converter for converting URDF files to compatible AMBF file format. 
-AMBF stands for (Asynchoronous Multi-Body Framework Multi-Body). AMBF is real-time dynamics engine
+AMBF stands for (Asynchoronous Multi-Body Framework). AMBF is real-time dynamics engine
 based on Bullet and CHAI-3D with ROS Support on Linux. The source code is located at:
 "https://github.com/WPI-AIM/ambf"
 
