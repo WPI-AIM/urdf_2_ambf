@@ -78,7 +78,7 @@ def to_kdl_vec(urdf_vec):
     # Default this vector to x axis consistent with the URDF convention
     v = Vector(1.0, 0, 0)
     if urdf_vec is not None:
-        xyz = [float(i) for i in urdf_vec.attrib['xyz'].split(' ')]
+        xyz = [float(i) for i in urdf_vec.attrib['xyz'].split()]
         for i in range(0, 3):
             v[i] = xyz[i]
     return v
@@ -396,7 +396,7 @@ class CreateAMBF:
                 urdf_link_color = urdf_material.find('color')
                 if urdf_link_color is not None:
                     del body_data['color']
-                    urdf_link_rgba = [float(i) for i in urdf_link_color.attrib['rgba'].split(' ')]
+                    urdf_link_rgba = [float(i) for i in urdf_link_color.attrib['rgba'].split()]
                     body_data['color rgba'] = {'r': 1.0, 'g': 1.0, 'b': 1.0, 'a': 1.0}
                     body_data['color rgba']['r'] = round(urdf_link_rgba[0], 4)
                     body_data['color rgba']['g'] = round(urdf_link_rgba[1], 4)
